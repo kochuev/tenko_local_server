@@ -1,0 +1,207 @@
+import copy
+import fcntl
+import json
+import logging
+import os
+import tempfile
+import threading
+import time
+from pathlib import Path
+
+from .protocol import ORDER, parse_report, schedule_warnings, serialize, validate_setting
+
+LOG = logging.getLogger(__name__)
+
+
+class Store:
+    def __init__(self, path, confirmation_timeout=600):
+        Path(path).parent.mkdir(parents=True, exist_ok=True)
+        self.lock = threading.RLock()
+        self.path = Path(path)
+        self.process_lock = open(str(self.path) + ".lock", "a")
+        try:
+            fcntl.flock(self.process_lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            self.records = json.loads(self.path.read_text()) if self.path.exists() else {}
+            if not isinstance(self.records, dict):
+                raise ValueError("State file must contain a serial-keyed object")
+            for serial, record in self.records.items():
+                if not isinstance(record, dict) or record.get("serial") != serial:
+                    raise ValueError("Invalid boiler record in state file")
+                if set(self._new(serial)) - record.keys():
+                    raise ValueError(f"Incomplete persisted record for {serial}")
+        except Exception:
+            self.process_lock.close()
+            raise
+        self.timeout = confirmation_timeout
+
+    def close(self):
+        self.process_lock.close()
+
+    def _read(self, serial):
+        return copy.deepcopy(self.records[serial])
+
+    def _write(self, record):
+        records = {**self.records, record["serial"]: record}
+        payload = json.dumps(records, allow_nan=False, indent=2)
+        descriptor, name = tempfile.mkstemp(prefix=".tenko-", suffix=".tmp", dir=self.path.parent)
+        try:
+            with os.fdopen(descriptor, "w") as stream:
+                stream.write(payload)
+                stream.flush()
+                os.fsync(stream.fileno())
+            os.replace(name, self.path)
+            directory = os.open(self.path.parent, os.O_RDONLY | os.O_DIRECTORY)
+            try:
+                os.fsync(directory)
+            finally:
+                os.close(directory)
+            self.records = copy.deepcopy(records)
+        finally:
+            if os.path.exists(name):
+                os.unlink(name)
+
+    def _new(self, serial):
+        return {"serial": serial, "report": {}, "last_report": None, "status": None,
+                "last_status": None, "pending": {}, "sent_at": None, "queued_at": None,
+                "attempts": 0, "command_state": "idle", "command_error": None,
+                "draft": {}, "draft_revision": 0, "revision": 0}
+
+    def get(self, serial):
+        with self.lock:
+            return self._read(serial)
+
+    def all(self):
+        with self.lock:
+            return [copy.deepcopy(self.records[key]) for key in sorted(self.records)]
+
+    def report(self, raw):
+        report = parse_report(raw)
+        now = time.time()
+        with self.lock:
+            try:
+                record = self._read(raw["sn"])
+            except KeyError:
+                record = self._new(raw["sn"])
+            record.update(report=report, last_report=now)
+            record["revision"] += 1
+            if report["stage_conflict"]:
+                LOG.warning("%s: ST1/ST2 disagree with STU", raw["sn"])
+            if report["parse_errors"]:
+                LOG.warning("%s: malformed report: %s", raw["sn"], report["parse_errors"])
+                self._write(record)
+                return record, "nochange"
+            if record["pending"] and record["sent_at"] is not None:
+                if all(report["settings"].get(k) == v for k, v in record["pending"].items()):
+                    record.update(pending={}, command_state="applied", command_error=None,
+                                  sent_at=None, queued_at=None)
+            response = "nochange"
+            if record["pending"]:
+                complete = {**report["settings"], **record["pending"]}
+                try:
+                    response = serialize(complete)
+                    record["attempts"] += 1
+                    if record["sent_at"] is None:
+                        record["sent_at"] = now
+                    expired = now - record["queued_at"] > self.timeout
+                    record["command_state"] = "error" if expired else "pending"
+                    record["command_error"] = (
+                        "Confirmation timed out; settings remain pending and will be retried" if expired else None)
+                except (ValueError, TypeError, OverflowError) as exc:
+                    record.update(command_state="error", command_error=str(exc))
+                    LOG.warning("%s: settings blocked: %s", raw["sn"], exc)
+            self._write(record)
+            return record, response
+
+    def status(self, raw):
+        if "status" not in raw or len(raw["status"]) > 256:
+            raise ValueError("Missing or oversized status")
+        with self.lock:
+            try:
+                record = self._read(raw["sn"])
+            except KeyError:
+                record = self._new(raw["sn"])
+            record.update(status=raw["status"], last_status=time.time())
+            self._write(record)
+            return record
+
+    def command(self, serial, patch, revision=None):
+        if not isinstance(patch, dict) or not patch:
+            raise ValueError("Expected a nonempty settings object")
+        normalized = {k: validate_setting(k, v) for k, v in patch.items()}
+        with self.lock:
+            record = self._read(serial)
+            if revision is not None and revision != record["revision"]:
+                raise ValueError("Report/command changed; reload before applying")
+            if not record["report"] or record["report"]["parse_errors"]:
+                raise ValueError("A valid parameter report is required before setting controls")
+            candidate = {**record["report"]["settings"], **record["pending"], **normalized}
+            serialize(candidate)
+            record.update(pending={**record["pending"], **normalized}, sent_at=None,
+                          queued_at=time.time(), attempts=0, command_state="pending", command_error=None)
+            record["revision"] += 1
+            self._write(record)
+            return record
+
+    def component_command(self, serial, key, index, value):
+        with self.lock:
+            record = self._read(serial)
+            settings = {**record.get("report", {}).get("settings", {}), **record["pending"]}
+            if index is None:
+                updated = value
+            else:
+                if key not in settings:
+                    raise ValueError(f"No unambiguous reported {key}; submit the complete tuple")
+                updated = copy.deepcopy(settings[key])
+                updated[index] = value
+            return self.command(serial, {key: updated})
+
+    def command_error(self, serial, message):
+        with self.lock:
+            record = self._read(serial)
+            record.update(command_error=message, command_state="error")
+            self._write(record)
+            LOG.warning("%s: command rejected: %s", serial, message)
+            return record
+
+    def draft(self, serial, patch, revision):
+        if not isinstance(patch, dict) or set(patch) - set(ORDER):
+            raise ValueError("Draft must contain supported settings only")
+        with self.lock:
+            record = self._read(serial)
+            if record["draft_revision"] != revision:
+                raise ValueError("Draft changed in another editor; reload before saving")
+            record.update(draft=patch, draft_revision=revision + 1)
+            self._write(record)
+            return record
+
+    def cancel(self, serial):
+        with self.lock:
+            record = self._read(serial)
+            record.update(pending={}, sent_at=None, queued_at=None,
+                          command_state="cancelled", command_error=None)
+            record["revision"] += 1
+            self._write(record)
+            return record
+
+    def expire(self):
+        with self.lock:
+            changed = []
+            for serial in self.records:
+                record = self._read(serial)
+                if (record["pending"] and record["queued_at"]
+                        and time.time() - record["queued_at"] > self.timeout
+                        and record["command_state"] != "error"):
+                    record.update(command_state="error",
+                                  command_error="Confirmation timed out; settings remain pending and will be retried")
+                    self._write(record)
+                    changed.append(serial)
+            return changed
+
+
+def public_record(record, freshness):
+    result = copy.deepcopy(record)
+    result["online"] = bool(record["last_report"] and time.time() - record["last_report"] < freshness)
+    result["schedule_warnings"] = schedule_warnings(record.get("report", {}).get("settings", {}))
+    if record["pending"] and record["queued_at"] and time.time() - record["queued_at"] > freshness:
+        result["waiting_note"] = "Awaiting boiler confirmation; inspect last report and command status"
+    return result

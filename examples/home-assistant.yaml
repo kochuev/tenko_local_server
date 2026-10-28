@@ -1,0 +1,48 @@
+# Paste as a manual dashboard (or copy the individual cards).
+# Replace 211229_005 with your serial. Entity IDs below are suggestions:
+# HA can choose different IDs, especially if entities already existed.
+title: Tenko Boiler
+views:
+  - title: Boiler
+    path: tenko
+    cards:
+      - type: entities
+        title: Live readings
+        entities:
+          - sensor.tenko_boiler_air_temperature
+          - sensor.tenko_boiler_flow_temperature
+          - sensor.tenko_boiler_return_temperature
+          - sensor.tenko_boiler_pressure
+          - binary_sensor.tenko_boiler_ten_1_heating
+          - binary_sensor.tenko_boiler_ten_2_heating
+      - type: entities
+        title: Settings
+        entities:
+          - select.tenko_boiler_control_mode
+          - switch.tenko_boiler_constant_temperature_enabled
+          - number.tenko_boiler_stored_air_target
+          - switch.tenko_boiler_automatic_modulation_enabled
+          - sensor.tenko_boiler_settings_upload_status
+      - type: iframe
+        title: Schedule
+        url: https://tenko.example.net/?serial=211229_005
+        aspect_ratio: 120%
+      - type: entities
+        title: Boiler-reported consumption (reference only)
+        entities:
+          - sensor.tenko_boiler_boiler_statistics_period
+          - sensor.tenko_boiler_boiler_period_consumption_presumed_kwh
+          - sensor.tenko_boiler_boiler_1_day_consumption_presumed_kwh
+          - sensor.tenko_boiler_boiler_7_day_consumption_presumed_kwh
+          - sensor.tenko_boiler_boiler_monthly_index_0_presumed_kwh
+          - sensor.tenko_boiler_boiler_monthly_index_1_presumed_kwh
+          - sensor.tenko_boiler_boiler_monthly_index_2_presumed_kwh
+          - sensor.tenko_boiler_boiler_monthly_index_3_presumed_kwh
+          - sensor.tenko_boiler_boiler_monthly_index_4_presumed_kwh
+          - sensor.tenko_boiler_boiler_monthly_index_5_presumed_kwh
+          - sensor.tenko_boiler_boiler_monthly_index_6_presumed_kwh
+          - sensor.tenko_boiler_boiler_monthly_index_7_presumed_kwh
+          - sensor.tenko_boiler_boiler_monthly_index_8_presumed_kwh
+          - sensor.tenko_boiler_boiler_monthly_index_9_presumed_kwh
+          - sensor.tenko_boiler_boiler_monthly_index_10_presumed_kwh
+          - sensor.tenko_boiler_boiler_monthly_index_11_presumed_kwh

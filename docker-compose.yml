@@ -1,0 +1,43 @@
+services:
+  tenko:
+    image: tenko-local:latest
+    build: .
+    restart: unless-stopped
+    init: true
+    ports:
+      - "${HTTP_BIND_ADDRESS:-0.0.0.0}:${HTTP_PORT:-9080}:${HTTP_PORT:-9080}"
+    environment:
+      HTTP_HOST: 0.0.0.0
+      HTTP_PORT: ${HTTP_PORT:-9080}
+      MQTT_HOST: ${MQTT_HOST:-host.docker.internal}
+      MQTT_PORT: ${MQTT_PORT:-1883}
+      MQTT_USERNAME: ${MQTT_USERNAME:-}
+      MQTT_PASSWORD: ${MQTT_PASSWORD:-}
+      MQTT_CLIENT_ID: ${MQTT_CLIENT_ID:-tenko-local}
+      MQTT_TLS: ${MQTT_TLS:-false}
+      MQTT_CA_FILE: ${MQTT_CA_FILE:-}
+      MQTT_PREFIX: ${MQTT_PREFIX:-tenko}
+      DISCOVERY_PREFIX: ${DISCOVERY_PREFIX:-homeassistant}
+      FRESHNESS_TIMEOUT: ${FRESHNESS_TIMEOUT:-180}
+      CONFIRMATION_TIMEOUT: ${CONFIRMATION_TIMEOUT:-600}
+      STATE_PATH: /data/state.json
+      EDITOR_USERNAME: ${EDITOR_USERNAME:-admin}
+      EDITOR_PASSWORD: ${EDITOR_PASSWORD:?Set EDITOR_PASSWORD in .env}
+      EDITOR_URL: ${EDITOR_URL:-http://localhost:9080}
+      FRAME_ANCESTORS: ${FRAME_ANCESTORS:-'self'}
+      STATUS_PATH: ${STATUS_PATH:-}
+      STATUS_METHOD: ${STATUS_METHOD:-}
+      NO_CHANGE_BODY: ${NO_CHANGE_BODY-nochange}
+      ALLOWED_SERIALS: ${ALLOWED_SERIALS:-}
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    volumes:
+      - tenko-data:/data
+    read_only: true
+    tmpfs:
+      - /tmp:size=8m,noexec,nosuid
+    cap_drop:
+      - ALL
+volumes:
+  tenko-data:

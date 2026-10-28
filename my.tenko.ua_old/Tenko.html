@@ -1,0 +1,1238 @@
+<!DOCTYPE html>
+<!-- saved from url=(0035)https://my.tenko.ua/home/211229_005 -->
+<html lang="en"><head><meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
+    
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+
+    <!-- CSRF Token -->
+    <meta name="csrf-token" content="ypNEguvGEEn8uGL8q5CSuLZZ6vLNGFq38hs3Q7oT">
+
+    <title>Tenko</title>
+    <link rel="icon" type="image/png" href="https://my.tenko.ua/favicon.png">
+    <!-- Styles -->
+    <link href="./Tenko_files/app.css" rel="stylesheet">
+    <link href="./Tenko_files/main.css" rel="stylesheet">
+	<link href="./Tenko_files/css" rel="stylesheet" type="text/css">
+	<link href="./Tenko_files/bootstrap.css" rel="stylesheet">
+	<link href="./Tenko_files/sb-admin-2.css" rel="stylesheet">
+	<link href="./Tenko_files/font-awesome.css" rel="stylesheet">
+    <link type="text/css" rel="stylesheet" href="./Tenko_files/toastr.min.css">
+
+        <!-- Scripts -->
+    <script>
+        window.Laravel = {"csrfToken":"ypNEguvGEEn8uGL8q5CSuLZZ6vLNGFq38hs3Q7oT"}    </script>
+	
+</head>
+<body>
+    <div id="app">
+    <!--<div class="alert alert-danger fade in alert-dismissible text-center">
+        <strong>Внимание!</strong> На сервере ведутся сервисные работы. Приносим свои извинения за временные неудобства.
+    </div>-->
+                <nav class="navbar navbar-default navbar-static-top">
+            <div class="container">
+                <div class="navbar-header">
+
+                    <!-- Collapsed Hamburger -->
+                    <button type="button" class="navbar-toggle collapsed" data-toggle="collapse" data-target="#app-navbar-collapse">
+                        <span class="sr-only">Toggle Navigation</span>
+                        <span class="icon-bar"></span>
+                        <span class="icon-bar"></span>
+                        <span class="icon-bar"></span>
+                    </button>
+
+                    <!-- Branding Image -->
+                    <a class="navbar-brand" href="https://my.tenko.ua/">
+                        Tenko
+                    </a>
+                </div>
+
+                <div class="collapse navbar-collapse" id="app-navbar-collapse">
+                    <!-- Left Side Of Navbar -->
+                    <ul class="nav navbar-nav">
+                        &nbsp;
+                    </ul>
+
+                    <!-- Right Side Of Navbar -->
+                    <ul class="nav navbar-nav navbar-right">
+                        <!-- Authentication Links -->
+                                                    <li class="dropdown">
+                                <a href="https://my.tenko.ua/home/211229_005#" class="dropdown-toggle" data-toggle="dropdown" role="button" aria-expanded="false">
+                                    211229_005 <span class="caret"></span>
+                                </a>
+
+                                <ul class="dropdown-menu" role="menu">
+									<li>
+										<a href="https://my.tenko.ua/profile"><i class="fa fa-user fa-fw"></i> Особистий кабінет</a>
+									</li>
+                                    <li class="divider"></li>
+                                    <li>
+                                        <a href="https://my.tenko.ua/api" target="_blank"><i class="fa fa-th fa-fw"></i> API docs<span class="label label-danger pull-right" style="margin-top: 6px;">NEW</span></a>
+                                    </li>
+									<li class="divider"></li>
+									<li>
+										<a href="https://my.tenko.ua/about"><i class="fa fa-phone fa-fw"></i> Контакти</a>
+									</li>
+									<li class="divider"></li>
+                                    <li>
+                                        <a href="https://my.tenko.ua/logout" onclick="event.preventDefault();
+                                                     document.getElementById('logout-form').submit();">
+                                            Вийти                                        </a>
+
+                                        <form id="logout-form" action="https://my.tenko.ua/logout" method="POST" style="display: none;">
+                                            <input type="hidden" name="_token" value="ypNEguvGEEn8uGL8q5CSuLZZ6vLNGFq38hs3Q7oT">
+                                        </form>
+                                    </li>
+                                </ul>
+                            </li>
+                                            </ul>
+                </div>
+            </div>
+        </nav>
+		<!-- Scripts -->
+		<script src="./Tenko_files/jquery.min.js"></script>
+		<script src="./Tenko_files/bootstrap.min.js"></script>
+        
+
+
+<script src="./Tenko_files/highcharts.js"></script>
+<script src="./Tenko_files/highcharts-more.js"></script>
+<script src="./Tenko_files/draggable-point.js"></script>
+<script src="./Tenko_files/bootstrap-switch.js"></script>
+<link href="./Tenko_files/bootstrap-switch.css" rel="stylesheet">
+
+
+<style>
+p {
+    margin: 10px 0 10px;
+}
+	.btn.btn-link.anti-hover:hover {
+		outline:none;
+		cursor:default;
+	}
+</style>
+    <div id="wrapper">
+						<div id="error_div" class="row" style="margin: 0 1px 0 1px; ">
+					<div class="col-xs-12 col-sm-12 col-md-12 col-lg-12">
+						<div class="alert alert-danger" role="alert">
+							<p>Ошибка!</p>
+								<li id="Err_type_total" style="display:none;">
+									<span data-toggle="tooltip" data-placement="bottom" title="" data-original-title="Связь Wi-Fi блока с Интернет установлено, но котел не отвечает. Возможна ошибка котла либо отсутствие связи Wi-Fi блок - котел">
+										Котел не отвечает
+									</span>
+								</li>
+								<li id="Err_type_time" style="">
+									<span data-toggle="tooltip" data-placement="bottom" title="" data-original-title="Отсутствует связь Wi-Fi блок - сервер. Возможно в месте установки Wi-Fi блока слабый уровень сигнала, либо произведена неудачная попытка соеденить Wi-Fi блок с Wi-Fi точкой доступа, либо отсутствует связь Wi-Fi точки доступа с Интернет">
+										Связь устройства с Интернет отсутствует
+									</span>
+								</li>
+								<li id="NA_err" style="display:none;">
+									<span data-toggle="tooltip" data-placement="bottom" title="" data-original-title="Внимание! Отсутствует проток теплоносителя">
+										Внимание! Отсутствует проток теплоносителя
+									</span>
+								</li>
+								<li id="Err_type" style="display:none;">
+																			<button class="btn-link-danger text-danger" onclick="drag_info()">Ошибка элемента</button>
+																	</li>
+								<li id="Davl_err" style="display:none;">
+										<span></span> 
+								</li>
+								<li id="Err_type_3" style="display:none;">
+									<span data-toggle="tooltip" data-placement="bottom" title="" data-original-title=""></span>
+								</li>
+						</div>
+					</div>
+				</div>
+				<div id="success_div" class="row" style="margin: 0 1px 0 1px;display:none;">
+					<div class="col-xs-12 col-sm-12 col-md-12 col-lg-12">
+						<div class="alert alert-success" role="alert">
+							<p>Данные были успешно изменены!</p>
+						</div>
+					</div>
+				</div>
+            <div class="row panel panel-primary" style="margin: 0 10px 0 10px">
+				 <div class="panel-heading  clearfix">
+					<div class="panel-title col-xs-12  col-sm-8 col-md-9 col-lg-9">
+						<h2>S/N 211229_005</h2>
+						<p>Версия котла: 8.2w1.2</p>
+						 <p>Мощность: 15 кВт </p>					</div>
+				    <div class="col-xs-12 col-sm-4 col-md-3 col-lg-3" style="margin-top:1%;">
+						<button class="btn btn-success pull-right btn-lg" style="display: block; width: 100%;" onclick="accept()" id="accept">Применить изменения</button>
+					</div>
+				</div>
+				<form class="form-horizontal">
+				<div class="panel-body">
+					<!-- LEFT INFO BAR -->
+					<div class="col-xs-12 col-sm-12 col-md-12 col-lg-12" id="total_error" style="display:none;">
+						<div class="alert alert-danger" role="alert">
+							<p>Ошибка! Проверьте вводимые данные.</p>
+						</div>
+					</div>
+					<div class="col-xs-12 col-sm-12 col-md-6 col-lg-6">
+						<div class="form-group">
+							<img class="img-responsive center-block" src="./Tenko_files/logo.png">
+						</div>
+						<div class="form-group">
+							<div class="col-xs-12 col-sm-12 col-md-12 col-lg-12">
+								<div style="    float: right;">
+																	<label class="control-label">ХАРКІВ</label>
+									<img src="./Tenko_files/04d.png"> +9<sup>o</sup>C
+																</div>	
+							</div>	
+						</div>
+						<!-- current -->
+						<div class="form-group ext_pmt" style="display: block;">							
+							<label class="control-label col-xs-12  col-sm-4" for="switcher_PMT">ПМТ</label>
+							<div class="col-xs-6 col-sm-2 col-md-3 col-lg-2" data-toggle="tooltip" data-placement="bottom" title="" data-original-title="Включение\выключение  поддержания минимальной температуры">
+								<div class="bootstrap-switch bootstrap-switch-wrapper bootstrap-switch-off bootstrap-switch-id-switcher_PMT bootstrap-switch-animate" style="width: 94px;"><div class="bootstrap-switch-container" style="width: 150px; margin-left: -58px;"><span class="bootstrap-switch-handle-on bootstrap-switch-primary" style="width: 58px;">Вкл</span><span class="bootstrap-switch-label" style="width: 34px;">&nbsp;</span><span class="bootstrap-switch-handle-off bootstrap-switch-default" style="width: 58px;">Выкл</span><input type="checkbox" name="my-switcher" id="switcher_PMT"></div></div>
+							</div>
+							<!--<div class="col-xs-6 col-sm-6 col-md-5 col-lg-3">
+								<input type="number" class="form-control" id="pmt" data-toggle="tooltip" data-placement="bottom" min="7" max="17" value="15" placeholder="Введите температуру от 7°C до 17°C. Пример: 12" title="Введите температуру от 7°C до 17°C. Пример: 12" disabled>
+							</div>
+							<div class="col-xs-6 col-sm-6 col-md-5 col-lg-3">
+								<input type="number" class="form-control" id="pmt" data-toggle="tooltip" data-placement="bottom" min="7" max="17" value="15" placeholder="Введите температуру от 7°C до 17°C. Пример: 12" title="Введите температуру от 7°C до 17°C. Пример: 12" disabled>
+							</div>-->
+						</div>
+						<div class="form-group ext_pmt" style="display: block;">							
+							<label class="control-label col-xs-12  col-sm-4 col-md-4 col-lg-4" for="pmt_bot">Температура ПМТ</label>
+							<div class="col-xs-6 col-sm-4 col-md-4 col-lg-4">
+								<input type="number" class="form-control" id="pmt_bot" data-toggle="tooltip" data-placement="bottom" min="6" max="15" value="15" placeholder="Введите температуру от 6°C до 15°C. Пример: 12" title="" disabled="" data-original-title="Введите минимальную температуру от 6°C до 15°C. Пример: 12">
+							</div>
+							<div class="col-xs-6 col-sm-4 col-md-4 col-lg-4">
+								<input type="number" class="form-control" id="pmt_top" data-toggle="tooltip" data-placement="bottom" min="7" max="17" value="17" placeholder="Введите температуру от 7°C до 17°C. Пример: 12" title="" disabled="" data-original-title="Введите максимальную температуру от 7°C до 17°C. Пример: 12">
+							</div>
+						</div>
+						<div class="form-group">							
+							<label class="control-label col-xs-12  col-sm-4 col-md-4 col-lg-4" for="switcher">Подача</label>
+							<div class="col-xs-6 col-sm-4 col-md-4 col-lg-4">
+								<input type="number" class="form-control" id="fi" data-toggle="tooltip" data-placement="bottom" min="10" max="75" value="50" title="" placeholder="Введите температуру от 10°C до 75°C . Пример: 22" data-original-title="Введите температуру от 10°C до 75°C . Пример: 22">
+							</div>
+							<div class="col-xs-6 col-sm-4 col-md-4 col-lg-4">
+								<input type="number" class="form-control" id="fi_delta" data-toggle="tooltip" data-placement="bottom" min="1" max="9" value="5" title="" placeholder="Введите дельту от 1° до 9° . Пример: 4" data-original-title="Введите диапазон температур переключения от 1° до 9° . Пример: 4">
+							</div>
+						</div>
+						<div class="form-group">							
+							<label class="control-label col-xs-12  col-sm-4 col-md-4 col-lg-4" for="switcher">Обратка</label>
+							<div class="col-xs-6 col-sm-4 col-md-4 col-lg-4">
+								<input type="number" class="form-control" id="re" data-toggle="tooltip" data-placement="bottom" min="10" max="75" value="45" title="" placeholder="Введите температуру от 10°C до 75°C . Пример: 22" data-original-title="Введите температуру от 10°C до 75°C . Пример: 22">
+							</div>
+							<div class="col-xs-6 col-sm-4 col-md-4 col-lg-4">
+								<input type="number" class="form-control" id="re_delta" data-toggle="tooltip" data-placement="bottom" min="1" max="9" value="5" title="" placeholder="Введите дельту от 1° до 9° . Пример: 4" data-original-title="Введите диапазон температур переключения от 1° до 9° . Пример: 4">
+							</div>
+						</div>
+						<!-- current -->
+													<div class="form-group ext_pmt" style="display: block;">
+								<label class="control-label col-xs-12  col-sm-4 col-md-4 col-lg-4" for="switcher_MOD">Модуляция</label>
+								<div class="col-xs-4col-sm-3 col-md-3 col-lg-2" data-toggle="tooltip" data-placement="bottom" title="" data-original-title="Включение\выключение модуляции">
+									<div class="bootstrap-switch bootstrap-switch-wrapper bootstrap-switch-on bootstrap-switch-id-switcher_MOD bootstrap-switch-animate" style="width: 94px;"><div class="bootstrap-switch-container" style="width: 150px; margin-left: 0px;"><span class="bootstrap-switch-handle-on bootstrap-switch-primary" style="width: 58px;">Вкл</span><span class="bootstrap-switch-label" style="width: 34px;">&nbsp;</span><span class="bootstrap-switch-handle-off bootstrap-switch-default" style="width: 58px;">Выкл</span><input type="checkbox" name="my-switcher" id="switcher_MOD" checked=""></div></div>
+								</div>
+								<div class="col-xs-8 col-lg-6" data-toggle="tooltip" data-placement="bottom" data-original-title="" title="">
+									<span id="mod_state_changed" hidden="">- состояние этого модуля изменено на устройстве. <a href="https://my.tenko.ua/home/211229_005#" id="updateModToActual">Показать актуальные данные</a>.</span>
+								</div>
+							</div>
+						<!-- current -->
+						<div class="form-group" id="stages" hidden="">
+							<label class="control-label col-xs-12  col-sm-4 col-md-4 col-lg-4" for="switcher_ST1">Ступень 1</label>
+							<div class="col-xs-6 col-sm-2 col-md-5 col-lg-2" style="padding-bottom:5px;" data-toggle="tooltip" data-placement="bottom" title="" data-original-title="Включение\выключение ступени №1">
+								<div class="bootstrap-switch bootstrap-switch-wrapper bootstrap-switch-off bootstrap-switch-id-switcher_ST1"><div class="bootstrap-switch-container"><span class="bootstrap-switch-handle-on bootstrap-switch-primary">Вкл</span><span class="bootstrap-switch-label">&nbsp;</span><span class="bootstrap-switch-handle-off bootstrap-switch-default">Выкл</span><input type="checkbox" name="my-switcher" id="switcher_ST1"></div></div>
+							</div>
+							<label class="control-label col-xs-12  col-sm-4 col-md-4 col-lg-3" for="switcher_ST2">Ступень 2</label>
+							<div class="col-xs-6 col-sm-2 col-md-5 col-lg-3" data-toggle="tooltip" data-placement="bottom" title="" data-original-title="Включение\выключение ступени №2">
+								<div class="bootstrap-switch bootstrap-switch-wrapper bootstrap-switch-off bootstrap-switch-id-switcher_ST2"><div class="bootstrap-switch-container"><span class="bootstrap-switch-handle-on bootstrap-switch-primary">Вкл</span><span class="bootstrap-switch-label">&nbsp;</span><span class="bootstrap-switch-handle-off bootstrap-switch-default">Выкл</span><input type="checkbox" name="my-switcher" id="switcher_ST2"></div></div>
+							</div>
+
+						</div>
+						<div class="form-group">						
+							<label class="control-label col-xs-12  col-sm-4 col-lg-4" for="pNA1">Пауза вкл.</label>						
+							<div class="col-xs-12 col-sm-8 col-md-8 col-lg-2" style="padding-bottom:5px;">
+								<input type="number" class="form-control" id="pNA1" data-toggle="tooltip" data-placement="top" min="1" max="15" value="1" placeholder="Интервал времени между моментами включения насоса и началом нагрева ТЭНа от 1 до 15 минут" title="" data-original-title="Интервал времени между моментами включения насоса и началом нагрева ТЭНа от 1 до 15 минут">
+							</div>	
+							<label class="control-label col-xs-12  col-sm-4 col-lg-3" for="pNA2">Пауза выкл.</label>						
+							<div class="col-xs-12 col-sm-8 col-md-8 col-lg-2">
+								<input type="number" class="form-control" id="pNA2" data-toggle="tooltip" data-placement="top" min="1" max="15" value="1" placeholder="Интервал времени между моментами остановки нагрева ТЭНа и выключения насоса от 1 до 15 минут" title="" data-original-title="Интервал времени между моментами остановки нагрева ТЭНа и выключения насоса от  1 до 15 минут">
+							</div>
+						</div>
+						<!-- current -->
+						<div class="form-group ext_pmt" style="display: block;">							
+							<label class="control-label col-xs-12 col-sm-4" for="switcher">График температур</label>
+							<div class="col-xs-6 col-sm-5" data-toggle="tooltip" data-placement="top" style="padding-bottom:5px;" title="" data-original-title="Вы можете задать температуру воздуха с помощью суточного и недельного таймера с помощью граффика либо установить постоянную температуру">
+								<div class="bootstrap-switch bootstrap-switch-wrapper bootstrap-switch-on bootstrap-switch-id-switcher bootstrap-switch-animate" style="width: 94px;"><div class="bootstrap-switch-container" style="width: 150px; margin-left: 0px;"><span class="bootstrap-switch-handle-on bootstrap-switch-primary" style="width: 58px;">Вкл</span><span class="bootstrap-switch-label" style="width: 34px;">&nbsp;</span><span class="bootstrap-switch-handle-off bootstrap-switch-default" style="width: 58px;">Выкл</span><input type="checkbox" name="my-switcher" id="switcher" checked=""></div></div>
+							</div>
+							<div class="col-xs-6 col-sm-3" id="switcher_GRAF_div" style="" data-toggle="tooltip" data-placement="top" title="" data-original-title="Вы можете выбрать график на каждый день недели, либо суточный график.">
+								<div class="bootstrap-switch bootstrap-switch-wrapper bootstrap-switch-off bootstrap-switch-id-switcher_GRAF bootstrap-switch-animate" style="width: 104px;"><div class="bootstrap-switch-container" style="width: 175px; margin-left: -73px;"><span class="bootstrap-switch-handle-on bootstrap-switch-primary" style="width: 73px;">Неделя</span><span class="bootstrap-switch-label" style="width: 29px;">&nbsp;</span><span class="bootstrap-switch-handle-off bootstrap-switch-default" style="width: 73px;">День</span><input type="checkbox" name="my-switcher" id="switcher_GRAF"></div></div>
+							</div>
+						</div>
+						<div class="form-group ext_pmt" id="permanent_t_div" style="display: none;">
+							<label class="control-label col-sm-4" for="permanent_t_opt_div">Постоянная температура </label>
+							<div class="col-sm-4" id="permanent_t_opt_div" data-toggle="tooltip" data-placement="top" title="" data-original-title="Включение\выключение постоянной температуры">
+								<div class="bootstrap-switch bootstrap-switch-wrapper bootstrap-switch-off bootstrap-switch-id-permanent_t_opt"><div class="bootstrap-switch-container"><span class="bootstrap-switch-handle-on bootstrap-switch-primary">Вкл</span><span class="bootstrap-switch-label">&nbsp;</span><span class="bootstrap-switch-handle-off bootstrap-switch-default">Выкл</span><input type="checkbox" name="my-switcher" id="permanent_t_opt"></div></div>
+							</div>
+							<div class="col-sm-4">
+						
+								<input type="number" class="form-control" id="permanent_t" placeholder="Введите температуру от 7°C до 30°C . Пример: 22°C" data-toggle="tooltip" data-placement="top" min="7" max="30" value="40.0" title="" disabled="" step="0.1" data-original-title="Введите температуру от 7°C до 30°C . Пример: 22°C">
+							</div>
+						</div>
+						<div class="form-group ext_pmt" id="grafs_t" style="display: block;">
+							<label class="control-label col-sm-4" for="day">День недели </label>
+							<div class="col-sm-3">
+								<select id="day" class="col-md-4 form-control">
+									<option value="monday">Понедельник</option>
+									<option value="tuesday">Вторник</option>
+									<option value="wednesday">Среда</option>
+									<option value="thursday">Четверг</option>
+									<option value="friday">Пятница</option>
+									<option value="saturday">Суббота</option>
+									<option value="sunday">Воскресенье</option>
+									<!--<option value="every_day">Каждый день</option>-->
+								</select>
+							</div>
+							<div class="col-sm-1">
+								<button class="btn btn-link anti-hover" style="color:black" onclick="event.preventDefault()">
+								<i class="fa fa-copy fa-lg" color="black" data-toggle="tooltip" data-placement="top" title="" data-original-title="Позволяет скопировать заданные настройки из выбранного дня в текущий"></i></button>
+							</div>
+							<div class="col-sm-4" data-toggle="tooltip" data-placement="top" title="" data-original-title="Позволяет скопировать заданные настройки из выбранного дня в текущий">
+								<select id="day_to_copy" class="col-md-4 form-control" onchange="copyDayChart(event,$('#day_to_copy').val(), $('#day').val())">
+									<option value="none" disabled="" selected="">Копировать точки из:</option>
+									<option value="monday">Понедельник</option>
+									<option value="tuesday">Вторник</option>
+									<option value="wednesday">Среда</option>
+									<option value="thursday">Четверг</option>
+									<option value="friday">Пятница</option>
+									<option value="saturday">Суббота</option>
+									<option value="sunday">Воскресенье</option>
+									<!--<option value="every_day">Каждый день</option>-->
+								</select>
+							</div>
+						</div>
+
+						<!-- current --> 
+					</div>
+					<!-- LEFT INFO BAR END-->
+					<!-- RIGHT INFO BAR -->
+					<div id="right_bar" class="col-xs-12 col-sm-12 col-md-6 col-lg-6">
+							<div class="panel panel-primary">
+								<div class="panel-heading">
+									<div class="row">
+											<div class="col-xs-12 text-center container anti_ext_pmt rs-info" style="display: block;">
+												<div class="huge"><h3>Датчик: <span id="Sens_info" style="">проводной</span></h3></div>
+											</div>
+											<div class="col-xs-12 text-center container anti_ext_pmt" id="Sens_ext" style="display: none;">
+												<div class="huge"><h3></h3></div>
+											</div>
+											<div class="col-xs-12 text-center container ext_pmt" id="Sens_temp" style="display: block;">
+												<div class="huge"><h3>Температура воздуха: <span id="TA_info" style="color: rgb(255, 255, 255);">24.2</span>°C</h3></div>
+											</div>
+										<!-- update 11.12.2015 -->
+										<div class="panel-body  primary" style="height: 67px; overflow: hidden;">
+											<div id="tens" hidden="">
+												<div class="col-xs-6 col-sm-6 col-md-6 col-lg-6 text-center container">
+													<h4>ТЭН 1 : <span id="span_TEN1" class="text-danger-ten">Выкл</span></h4>
+												</div>
+												<div class="col-xs-6 col-sm-6 col-md-6 col-lg-6 text-center container">
+													<h4>ТЭН 2 : <span id="span_TEN2" class="text-danger-ten">Выкл</span> </h4>
+												</div>
+											</div>
+											<div id="mod">
+												<div class="col-xs-6 text-center container">
+													<h4>Модуляция: <span id="span_ModAmount" class="text-success-ten">0/3</span> </h4>
+												</div>
+												<div class="col-xs-6 text-center container">
+													<h4 style="color: white;">Нагрев: <span id="span_ModStatus" class="text-success-ten">Выкл</span> </h4>
+												</div>
+											</div>
+
+										</div>
+										<!-- update 11.12.2015 -->
+									</div>
+								</div>
+								<!--<div class="panel-body  primary" style="background-color: #D8D5D5;"> 
+									<div class="col-xs-6 col-sm-6 col-md-6 col-lg-6 text-center container">
+										ТЭН 1 : <span style="color:green;">Вкл</span>
+									</div> 
+									<div class="col-xs-6 col-sm-6 col-md-6 col-lg-6 text-center container">
+										ТЭН 2 : <span style="color:red;">Выкл</span>
+									</div>
+								</div>-->
+								<div class="panel-body" style=""> 
+									<div class="col-xs-12 col-sm-12 col-md-12 col-lg-12">
+										<div class="col-xs-12 col-sm-6 col-md-6 col-lg-6">
+											<p>Температура подачи:</p>
+										</div>
+										<div class="col-xs-12 col-sm-6 col-md-6 col-lg-6">
+											<p id="">
+												<span id="TF_info">39.0</span> °C
+											</p>
+										</div>
+									</div>
+									<div class="col-xs-12 col-sm-12 col-md-12 col-lg-12">
+										<div class="col-xs-12 col-sm-6 col-md-6 col-lg-6">
+											<p>Температура обратки:</p>
+										</div>
+										<div class="col-xs-12 col-sm-6 col-md-6 col-lg-6">
+											<p id="">
+												<span id="TR_info">37.0</span> °C
+											</p>
+										</div>
+									</div>
+									<!--<div class="col-xs-12 col-sm-12 col-md-12 col-lg-12 $data['DP_class'] ">
+										<div class="col-xs-12 col-sm-6 col-md-6 col-lg-6">
+											<p >Датчик протока :</p>
+										</div>
+										<div class="col-xs-12 col-sm-6 col-md-6 col-lg-6">
+											<p id=""> 
+												<span id="DP_info">$data['DP']</span>
+											</p>
+										</div>
+									</div>-->
+									<div class="col-xs-12 col-sm-12 col-md-12 col-lg-12">
+										<div class="col-xs-12 col-sm-6 col-md-6 col-lg-6">
+											<p>Насос:</p>
+										</div>
+										<div class="col-xs-12 col-sm-6 col-md-6 col-lg-6">
+											<p>
+												<span id="NA_info">Выкл</span>
+											</p>
+										</div>
+									</div>
+									
+									<div class="davl_state col-xs-12 col-sm-12 col-md-12 col-lg-12">
+										<div class="col-xs-12 col-sm-6 col-md-6 col-lg-6">
+											<p>Давление:</p>
+										</div>
+										<div class="col-xs-12 col-sm-6 col-md-6 col-lg-6">
+											<p>
+												<span id="Davl_info">1.6</span>
+											</p>
+										</div>
+									</div>
+									<!-- current -->
+									<div class="col-xs-12 col-sm-12 col-md-12 col-lg-12 ext_pmt " style="display: block;">
+										<div class="col-xs-12 col-sm-6 col-md-6 col-lg-6">
+											<p>ПМТ (статус/температура):</p>
+										</div>
+										<div class="col-xs-12 col-sm-6 col-md-6 col-lg-6">
+											<p>
+												<span id="PM_info1">Выкл</span>
+												/
+												<span id="PM_info2">24.2</span>
+											</p>
+										</div>
+									</div>
+									<!-- end current -->
+
+																			<div class="col-xs-12 col-sm-12 col-md-12 col-lg-12 text-success-ten">
+											<div class="col-xs-12 col-sm-6 col-md-6 col-lg-6">
+												<p>AF-5:</p>
+											</div>
+											<div class="col-xs-12 col-sm-6 col-md-6 col-lg-6">
+												<p>
+													<span id="AF_info">Ожидание</span>
+												</p>
+											</div>
+										</div>
+									
+									<div class="col-xs-12 col-sm-12 col-md-12 col-lg-12 ">
+										<div class="col-xs-12 col-sm-6 col-md-6 col-lg-6">
+											
+																							<a href="https://my.tenko.ua/statistic/211229_005"><p><span class="glyphicon glyphicon-equalizer" aria-hidden="true"></span>Статистика:</p></a>
+																					</div>
+										<div class="col-xs-12 col-sm-4 col-md-4 col-lg-4" data-toggle="tooltip" data-placement="bottom" title="" data-original-title="Период статистики до 30 дней">
+											<p>30 дней 1475 кВт</p>
+																							<p>7 дней 220 кВт</p>
+																																		<p>1 день 0 кВт</p>
+																					</div>
+									</div>
+									<div class="col-xs-12 col-sm-12 col-md-12 col-lg-12 ">
+										<div class="col-xs-12 col-sm-6 col-md-6 col-lg-6">
+											<p>Дата:</p>
+										</div>
+										<div class="col-xs-12 col-sm-6 col-md-6 col-lg-6">
+											<p>22:05 Ср 27.10.26</p>
+										</div>
+									</div>
+									
+																	</div>
+							</div>
+					</div>
+					<!-- RIGHT INFO BAR END-->
+					<div class="col-xs-12 col-sm-12 col-md-12 col-lg-12" id="error" style="display:none;">
+						<div class="alert alert-danger" role="alert">
+							<p>Ошибка! Две точки температур не могут находиться в промежутке одного часа.</p>
+						</div>
+					</div>
+					<!-- GRAFS -->
+					<div class="col-xs-12 col-sm-12 col-md-12 col-lg-12" id="grafs" style="">
+						<div id="container" style="height: 400px" data-highcharts-chart="0"><div class="highcharts-container" id="highcharts-0" style="position: relative; overflow: hidden; width: 1172px; height: 400px; text-align: left; line-height: normal; z-index: 0; -webkit-tap-highlight-color: rgba(0, 0, 0, 0);"><svg version="1.1" style="font-family:&quot;Lucida Grande&quot;, &quot;Lucida Sans Unicode&quot;, Arial, Helvetica, sans-serif;font-size:12px;" xmlns="http://www.w3.org/2000/svg" width="1172" height="400"><desc>Created with Highcharts 4.1.8</desc><defs><clippath id="highcharts-1"><rect x="0" y="0" width="1101" height="320"></rect></clippath></defs><rect x="0" y="0" width="1172" height="400" strokeWidth="0" fill="#FFFFFF" class=" highcharts-background"></rect><path fill="#ff5555" d="M 61 365.5 L 1162 365.5 1162 317.5 61 317.5"></path><g class="highcharts-grid" zIndex="1"></g><g class="highcharts-grid" zIndex="1"><path fill="none" d="M 61 365.5 L 1162 365.5" stroke="#D8D8D8" stroke-width="1" zIndex="1" opacity="1"></path><path fill="none" d="M 61 205.5 L 1162 205.5" stroke="#D8D8D8" stroke-width="1" zIndex="1" opacity="1"></path><path fill="none" d="M 61 125.5 L 1162 125.5" stroke="#D8D8D8" stroke-width="1" zIndex="1" opacity="1"></path><path fill="none" d="M 61 44.5 L 1162 44.5" stroke="#D8D8D8" stroke-width="1" zIndex="1" opacity="1"></path></g><g class="highcharts-axis" zIndex="2"><path fill="none" d="M 60.5 365 L 60.5 375" stroke="#C0D0E0" stroke-width="1" opacity="1"></path><path fill="none" d="M 156.5 365 L 156.5 375" stroke="#C0D0E0" stroke-width="1" opacity="1"></path><path fill="none" d="M 251.5 365 L 251.5 375" stroke="#C0D0E0" stroke-width="1" opacity="1"></path><path fill="none" d="M 347.5 365 L 347.5 375" stroke="#C0D0E0" stroke-width="1" opacity="1"></path><path fill="none" d="M 443.5 365 L 443.5 375" stroke="#C0D0E0" stroke-width="1" opacity="1"></path><path fill="none" d="M 539.5 365 L 539.5 375" stroke="#C0D0E0" stroke-width="1" opacity="1"></path><path fill="none" d="M 634.5 365 L 634.5 375" stroke="#C0D0E0" stroke-width="1" opacity="1"></path><path fill="none" d="M 730.5 365 L 730.5 375" stroke="#C0D0E0" stroke-width="1" opacity="1"></path><path fill="none" d="M 826.5 365 L 826.5 375" stroke="#C0D0E0" stroke-width="1" opacity="1"></path><path fill="none" d="M 922.5 365 L 922.5 375" stroke="#C0D0E0" stroke-width="1" opacity="1"></path><path fill="none" d="M 1017.5 365 L 1017.5 375" stroke="#C0D0E0" stroke-width="1" opacity="1"></path><path fill="none" d="M 1113.5 365 L 1113.5 375" stroke="#C0D0E0" stroke-width="1" opacity="1"></path><path fill="none" d="M 61 365.5 L 1162 365.5" stroke="#C0D0E0" stroke-width="1" zIndex="7" visibility="visible"></path></g><g class="highcharts-axis" zIndex="2"><text x="23.75" zIndex="7" text-anchor="middle" transform="translate(0,0) rotate(270 23.75 205)" class=" highcharts-yaxis-title" style="color:#707070;fill:#707070;" visibility="visible" y="205"><tspan>Температура (°C)</tspan></text></g><g class="highcharts-series-group" zIndex="3"><g class="highcharts-series highcharts-tracker" visibility="visible" zIndex="0.1" transform="translate(61,45) scale(1 1)" clip-path="url(#highcharts-1)" style=""></g><g class="highcharts-markers highcharts-tracker" visibility="visible" zIndex="0.1" transform="translate(61,45) scale(1 1)" clip-path="url(#highcharts-2)" style=""><path fill="#7cb5ec" d="M 1101 -12 C 1116.984 -12 1116.984 12 1101 12 C 1085.016 12 1085.016 -12 1101 -12 Z"></path><path fill="#7cb5ec" d="M 1005 308 C 1020.984 308 1020.984 332 1005 332 C 989.016 332 989.016 308 1005 308 Z"></path><path fill="#7cb5ec" d="M 957 308 C 972.984 308 972.984 332 957 332 C 941.016 332 941.016 308 957 308 Z"></path><path fill="#7cb5ec" d="M 718 308 C 733.984 308 733.984 332 718 332 C 702.016 332 702.016 308 718 308 Z"></path><path fill="#7cb5ec" d="M 574 308 C 589.984 308 589.984 332 574 332 C 558.016 332 558.016 308 574 308 Z"></path><path fill="#7cb5ec" d="M 335 308 C 350.984 308 350.984 332 335 332 C 319.016 332 319.016 308 335 308 Z"></path><path fill="#7cb5ec" d="M 143 144.8 C 158.984 144.8 158.984 168.8 143 168.8 C 127.016 168.8 127.016 144.8 143 144.8 Z"></path><path fill="#7cb5ec" d="M 0 -12 C 15.984 -12 15.984 12 0 12 C -15.984 12 -15.984 -12 0 -12 Z"></path><path fill="#7cb5ec" d="M 0 -12 C 15.984 -12 15.984 12 0 12 C -15.984 12 -15.984 -12 0 -12 Z"></path><path fill="#7cb5ec" d="M 0 -12 C 15.984 -12 15.984 12 0 12 C -15.984 12 -15.984 -12 0 -12 Z"></path></g></g><text x="586" text-anchor="middle" class="highcharts-title" zIndex="4" style="color:#333333;font-size:18px;fill:#333333;width:1108px;" y="24">Часы</text><g class="highcharts-axis-labels highcharts-xaxis-labels" zIndex="7"><text x="61" style="color:#606060;cursor:default;font-size:11px;fill:#606060;width:90px;text-overflow:clip;" text-anchor="middle" transform="translate(0,0)" y="384" opacity="1">0</text><text x="156.73913043478262" style="color:#606060;cursor:default;font-size:11px;fill:#606060;width:90px;text-overflow:clip;" text-anchor="middle" transform="translate(0,0)" y="384" opacity="1">2</text><text x="252.47826086956522" style="color:#606060;cursor:default;font-size:11px;fill:#606060;width:90px;text-overflow:clip;" text-anchor="middle" transform="translate(0,0)" y="384" opacity="1">4</text><text x="348.2173913043478" style="color:#606060;cursor:default;font-size:11px;fill:#606060;width:90px;text-overflow:clip;" text-anchor="middle" transform="translate(0,0)" y="384" opacity="1">6</text><text x="443.95652173913044" style="color:#606060;cursor:default;font-size:11px;fill:#606060;width:90px;text-overflow:clip;" text-anchor="middle" transform="translate(0,0)" y="384" opacity="1">8</text><text x="539.695652173913" style="color:#606060;cursor:default;font-size:11px;fill:#606060;width:90px;text-overflow:clip;" text-anchor="middle" transform="translate(0,0)" y="384" opacity="1">10</text><text x="635.4347826086956" style="color:#606060;cursor:default;font-size:11px;fill:#606060;width:90px;text-overflow:clip;" text-anchor="middle" transform="translate(0,0)" y="384" opacity="1">12</text><text x="731.1739130434783" style="color:#606060;cursor:default;font-size:11px;fill:#606060;width:90px;text-overflow:clip;" text-anchor="middle" transform="translate(0,0)" y="384" opacity="1">14</text><text x="826.9130434782609" style="color:#606060;cursor:default;font-size:11px;fill:#606060;width:90px;text-overflow:clip;" text-anchor="middle" transform="translate(0,0)" y="384" opacity="1">16</text><text x="922.6521739130435" style="color:#606060;cursor:default;font-size:11px;fill:#606060;width:90px;text-overflow:clip;" text-anchor="middle" transform="translate(0,0)" y="384" opacity="1">18</text><text x="1018.3913043478261" style="color:#606060;cursor:default;font-size:11px;fill:#606060;width:90px;text-overflow:clip;" text-anchor="middle" transform="translate(0,0)" y="384" opacity="1">20</text><text x="1114.1304347826087" style="color:#606060;cursor:default;font-size:11px;fill:#606060;width:90px;text-overflow:clip;" text-anchor="middle" transform="translate(0,0)" y="384" opacity="1">22</text></g><g class="highcharts-axis-labels highcharts-yaxis-labels" zIndex="7"><text x="46" style="color:#606060;cursor:default;font-size:11px;fill:#606060;width:377px;text-overflow:clip;" text-anchor="end" transform="translate(0,0)" y="370" opacity="1">0</text><text x="46" style="color:#606060;cursor:default;font-size:11px;fill:#606060;width:377px;text-overflow:clip;" text-anchor="end" transform="translate(0,0)" y="290" opacity="1">ВЫКЛ</text><text x="46" style="color:#606060;cursor:default;font-size:11px;fill:#606060;width:377px;text-overflow:clip;" text-anchor="end" transform="translate(0,0)" y="210" opacity="1">20</text><text x="46" style="color:#606060;cursor:default;font-size:11px;fill:#606060;width:377px;text-overflow:clip;" text-anchor="end" transform="translate(0,0)" y="130" opacity="1">30</text><text x="46" style="color:#606060;cursor:default;font-size:11px;fill:#606060;width:377px;text-overflow:clip;" text-anchor="end" transform="translate(0,0)" y="50" opacity="1">40</text></g><g class="highcharts-tooltip" zIndex="8" style="cursor:default;padding:0;white-space:nowrap;" transform="translate(0,-9999)"><path fill="none" d="M 3.5 0.5 L 13.5 0.5 C 16.5 0.5 16.5 0.5 16.5 3.5 L 16.5 13.5 C 16.5 16.5 16.5 16.5 13.5 16.5 L 3.5 16.5 C 0.5 16.5 0.5 16.5 0.5 13.5 L 0.5 3.5 C 0.5 0.5 0.5 0.5 3.5 0.5" isShadow="true" stroke="black" stroke-opacity="0.049999999999999996" stroke-width="5" transform="translate(1, 1)"></path><path fill="none" d="M 3.5 0.5 L 13.5 0.5 C 16.5 0.5 16.5 0.5 16.5 3.5 L 16.5 13.5 C 16.5 16.5 16.5 16.5 13.5 16.5 L 3.5 16.5 C 0.5 16.5 0.5 16.5 0.5 13.5 L 0.5 3.5 C 0.5 0.5 0.5 0.5 3.5 0.5" isShadow="true" stroke="black" stroke-opacity="0.09999999999999999" stroke-width="3" transform="translate(1, 1)"></path><path fill="none" d="M 3.5 0.5 L 13.5 0.5 C 16.5 0.5 16.5 0.5 16.5 3.5 L 16.5 13.5 C 16.5 16.5 16.5 16.5 13.5 16.5 L 3.5 16.5 C 0.5 16.5 0.5 16.5 0.5 13.5 L 0.5 3.5 C 0.5 0.5 0.5 0.5 3.5 0.5" isShadow="true" stroke="black" stroke-opacity="0.15" stroke-width="1" transform="translate(1, 1)"></path><path fill="rgba(249, 249, 249, .85)" d="M 3.5 0.5 L 13.5 0.5 C 16.5 0.5 16.5 0.5 16.5 3.5 L 16.5 13.5 C 16.5 16.5 16.5 16.5 13.5 16.5 L 3.5 16.5 C 0.5 16.5 0.5 16.5 0.5 13.5 L 0.5 3.5 C 0.5 0.5 0.5 0.5 3.5 0.5"></path><text x="8" zIndex="1" style="font-size:12px;color:#333333;fill:#333333;" y="20"></text></g><text x="1162" text-anchor="end" zIndex="8" style="cursor:pointer;color:#909090;font-size:9px;fill:#909090;" y="395">Highcharts.com</text></svg></div></div>
+						<div id="drag"></div>
+						<div id="drop"></div>
+					</div>
+					<!-- GRAFS END-->
+				</div>
+				</form>
+			</div>                
+            <!-- /.row -->
+        </div>
+        <!-- /#page-wrapper -->
+
+
+    <!-- /#wrapper -->
+
+
+
+
+<script>
+// jQuery( document ).ready(function() {
+	jQuery.ajaxSetup({
+		headers: {
+			'X-CSRF-TOKEN': $('meta[name="csrf-token"]').attr('content')
+		}
+	});
+// });
+	
+let chartValType = "float";
+var sn_demo_save = "211229_005"; 
+var sn_demo = "211229_005";
+function drag_info(){
+    $('html, body').animate({
+        scrollTop: $("#right_bar").offset().top
+    }, 1100);
+	var times = 10;
+	var duration = 200;
+	for (var i = 0; i < times; i++)
+		$('#right_bar').animate({
+			left: (i % 2 === 0 ? "-" : "+") + "=50"
+		}, duration);
+}
+	var day = "monday";
+	var use_type = 'GraphD';
+	if (use_type == 'GraphD'){
+		var day = "every_day";
+	}
+	var grafs = [];
+	var error_exist=0;
+	grafs['monday']    = [[2,39],[3,37.1],[4,35.2],[5,33.3],[6,31.4],[7,29.5],[8,27.6],[9,25.7],[11,40],[18,40]];
+	grafs['tuesday']   = [[4,38],[5,36.1],[6,34.2],[7,32.3],[8,30.4],[9,28.5],[10,26.6],[11,24.7],[12,22.8],[13,20.9]];
+	grafs['wednesday'] = [[6,37],[7,35.1],[8,33.2],[9,31.3],[10,29.4],[11,27.5],[12,25.6],[13,23.7],[14,21.8],[15,19.9]];
+	grafs['thursday']  = [[8,36],[9,34.1],[10,32.2],[11,30.3],[12,28.4],[13,26.5],[14,24.6],[15,22.7],[16,20.8],[17,18.9]];
+	grafs['friday']    = [[10,35],[11,33.1],[12,31.2],[13,29.3],[14,27.4],[15,25.5],[16,23.6],[17,21.7],[18,19.8],[19,17.9]];
+	grafs['saturday']  = [[12,34],[13,32.1],[14,30.2],[15,28.3],[16,26.4],[17,24.5],[18,22.6],[19,20.7],[20,18.8],[21,16.9]];
+	grafs['sunday']    = [[14,33],[15,31.1],[16,29.2],[17,27.3],[18,25.4],[19,23.5],[20,21.6],[21,19.7],[22,17.8],[23,15.9]];
+	grafs['every_day'] = [[0,40],[0,40],[0,40],[3,20.4],[7,0],[12,0],[15,0],[20,0],[21,0],[23,40]];
+	console.log(grafs);
+
+$("#day").change(function () {
+		var chart = $('#container').highcharts();
+		var newarray=[];
+		var i = 0;
+		chart.series[0].data.forEach(function(entry) {
+			newarray[i] = [];
+			newarray[i].push(parseFloat(entry.x.toFixed(0)));
+			if(chartValType == 'float'){
+                newarray[i].push(parseFloat(entry.y.toFixed(1)));
+			} else {
+                newarray[i].push(parseFloat(entry.y.toFixed(0)));
+			}
+			i++;
+		});
+		grafs[day]=[];
+		grafs[day]=newarray.slice();
+		day = $( this ).val();
+      	chart.series[0].setData(grafs[day]);
+    });
+function accept(){
+    let chartValType = "float";
+	//validator
+	var validator=0;
+	var $post           = {};
+	if ($("#pmt_bot").val()<6 || $("#pmt_bot").val()>15){
+		$("#pmt_bot").parent().addClass( "has-warning" );
+		validator=1;
+	} else {
+		$("#pmt_bot").parent().removeClass( "has-warning" );
+	}
+	console.log(validator);
+	if ($("#pmt_top").val()<7 || $("#pmt_top").val()>17){
+		$("#pmt_top").parent().addClass( "has-warning" );
+		validator=1;
+	} else {
+		$("#pmt_top").parent().removeClass( "has-warning" );
+	}
+	console.log(validator);
+	if (parseFloat($("#pmt_bot").val()) >= parseFloat($("#pmt_top").val())){
+		$("#pmt_bot").parent().addClass( "has-warning" );
+		$("#pmt_top").parent().addClass( "has-warning" );
+		validator=1;
+	} else {
+		$("#pmt_top").parent().removeClass( "has-warning" );
+		$("#pmt_bot").parent().removeClass( "has-warning" );
+	}
+	console.log(validator);
+	if ($("#permanent_t").val()<7 || $("#permanent_t").val()>40){
+		$("#permanent_t").parent().addClass( "has-warning" );
+		validator=1;
+	} else {
+		$("#permanent_t").parent().removeClass( "has-warning" );
+	};
+	console.log(validator);
+	//------------------------------------------------------
+	if ($("#fi").val()<10 || $("#fi").val()>75){
+		$("#fi").parent().addClass( "has-warning" );
+		validator=1;
+	} else {
+		$("#fi").parent().removeClass( "has-warning" );
+	}
+	console.log(validator);
+	if ($("#fi_delta").val()<1 || $("#fi_delta").val()>9){
+		$("#fi_delta").parent().addClass( "has-warning" );
+		validator=1;
+	} else {
+		$("#fi_delta").parent().removeClass( "has-warning" );
+	}
+	console.log(validator);
+	//------------------------------------------------------
+	if ($("#re").val()<10 || $("#re").val()>75){
+		$("#re").parent().addClass( "has-warning" );
+		validator=1;
+	} else {
+		$("#re").parent().removeClass( "has-warning" );
+	}
+	console.log(validator);
+	if ($("#re_delta").val()<1 || $("#re_delta").val()>9){
+		$("#re_delta").parent().addClass( "has-warning" );
+		validator=1;
+	} else {
+		$("#re_delta").parent().removeClass( "has-warning" );
+	}
+	console.log(validator);
+	//------------------------------------------------------
+	if ($("#pNA1").val()<1 || $("#pNA1").val()>15){
+		$("#pNA1").parent().addClass( "has-warning" );
+		validator=1;
+	} else {
+		$("#pNA1").parent().removeClass( "has-warning" );
+	}
+	console.log(validator);
+	//------------------------------------------------------
+	if ($("#pNA2").val()<1 || $("#pNA2").val()>15){
+		$("#pNA2").parent().addClass( "has-warning" );
+		validator=1;
+	} else {
+		$("#pNA2").parent().removeClass( "has-warning" );
+	}
+	console.log(validator);
+	//validator END
+	if (validator==0 && sn_demo_save != 'demo'){ 
+		$("#total_error").hide();
+		// $("#day").change();
+		var chart = $('#container').highcharts();
+		var newarray=[];
+		var i = 0;
+		chart.series[0].data.forEach(function(entry) {
+			newarray[i] = [];
+
+			console.log(chartValType);
+			newarray[i].push(parseFloat(entry.x.toFixed(0)));
+			if(chartValType == 'float'){
+                newarray[i].push(entry.y.toFixed(1));
+			} else {
+                newarray[i].push(parseFloat(entry.y.toFixed(0)));
+			}
+			i++;
+		});
+		console.log(grafs);
+		grafs[day]=[];
+		grafs[day]=newarray.slice();
+		//hot fix end
+		var url             = "https://my.tenko.ua/ajax/update";
+		$post.sn			= "211229_005";
+		$post.PMT = [];
+		$post.PMT[0]	= (($("#switcher_PMT").bootstrapSwitch('state')==true) ? "On":"Off");
+		$post.PMT[1]			= parseFloat($("#pmt_bot").val()).toFixed(0);
+        $post.PMT[2]			= parseFloat($("#pmt_top").val()).toFixed(0);
+        $post.FI = [];
+        $post.FI[0]			= parseFloat($("#fi").val()).toFixed(0);
+        $post.FI[1]		= parseFloat($("#fi_delta").val()).toFixed(0);
+        $post.RE = [];
+        $post.RE[0]			= parseFloat($("#re").val()).toFixed(0);
+        $post.RE[1]		= parseFloat($("#re_delta").val()).toFixed(0);
+        $post.pNA = [];
+        $post.pNA[0]			= parseFloat($("#pNA1").val()).toFixed(0);
+        $post.pNA[1]			= parseFloat($("#pNA2").val()).toFixed(0);
+        //new
+		if(true)
+        	$post.MOD	= (($("#switcher_MOD").bootstrapSwitch('state')==true) ? "On":"Off");
+		else
+		    $post.MOD = 'disabled';
+        $post.STU = [];
+        $post.STU[0]			= (($("#switcher_ST1").bootstrapSwitch('state')==true) ? "On":"Off");
+        $post.STU[1]			= (($("#switcher_ST2").bootstrapSwitch('state')==true) ? "On":"Off");
+
+        $post.USE			= (($("#switcher").bootstrapSwitch('state')==true) ? "Grap":"Temp");
+        if ($post.USE == "Grap"){
+			$post.USE = (($("#switcher_GRAF").bootstrapSwitch('state')==true) ? "GraphW":"GraphD");
+			// if($("#day").val() == 'every_day'){
+				// $post.USE = "GraphD";
+			// } else {
+				// $post.USE = "GraphW";
+			// }
+		}
+		$post.TMP= [];
+		$post.TMP[0]			= (($("#permanent_t_opt").bootstrapSwitch('state')==true) ? "On":"Off");
+		$post.TMP[1]			= parseFloat($("#permanent_t").val()).toFixed(chartValType == 'float'? 1:0);
+		$post.MO			= grafs['monday'];
+		$post.TU 			= grafs['tuesday'];
+		$post.WE 			= grafs['wednesday'];
+		$post.TH 			= grafs['thursday'];
+		$post.FR 			= grafs['friday'];
+		$post.SA 			= grafs['saturday'];
+		$post.SU 			= grafs['sunday'] ;
+		$post.ED 			= grafs['every_day'] ;
+		
+		$.ajaxSetup({
+		   headers: { 'X-CSRF-Token' : $('meta[name=csrf-token]').attr('content') }
+		});
+		$.ajax({
+			type: "POST",
+			url: url,
+			data: $post,
+			cache: false,
+			success: function(data){
+				$('#success_div').fadeIn('fast');
+				setTimeout(function() {
+					$('#success_div').fadeOut('fast');
+				}, 5000);
+				console.log(data);
+			}
+		});
+	} else {
+		if (validator != 0){
+			$("#total_error").show();
+		}
+		if (sn_demo_save == 'demo' && validator==0){
+			$('#success_div').fadeIn('fast');
+			setTimeout(function() {
+				$('#success_div').fadeOut('fast');
+			}, 5000);
+			console.log('Not save demo data.');
+		} 
+	}
+
+	// console.log(); true
+	// console.log($("#switcher_ST2").bootstrapSwitch('state'));false	
+
+}
+$(document).ready(function() {
+    let chartValType = 'float';
+//    console.log (chartValType);
+    $(function() {
+        $('#container').highcharts({
+            chart: {
+				type: 'scatter',
+                renderTo: 'container',
+                animation: false,
+				events: {
+					load: function () {
+						$('.highcharts-grid path:nth-child(2)').remove();
+						$('.highcharts-yaxis-labels text:nth-child(2)').html('ВЫКЛ');
+						
+					}
+				}
+            },
+            title: {
+                text: 'Часы'
+            },
+            xAxis: {
+                // categories: [0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23]
+				min:0,
+				max:23,
+            },
+            yAxis: {
+                title: {
+                    text: 'Температура (°C)'
+                },
+				// gridLineColor:'#ff5555',
+                min: 0,
+                max: 40,
+				plotBands: [{
+					from: 0,
+					to: 6,
+					color: '#ff5555'
+				}]
+            },
+            // @todo  Y TO FIXED CHANGE TO 1 in case of float
+            tooltip: {
+                valueSuffix: '°C',
+                formatter: function() {
+					if (this.y.toFixed(0) > 6){
+						return '<b>Время:' + this.x.toFixed(0) + ' часов</b>: ' + this.y.toFixed(chartValType == 'float'? 1:0) + ' °C';
+					} else {
+						return '<b>Время:' + this.x.toFixed(0) + ' часов</b>: ВЫКЛ';
+					}
+                }
+
+            },
+			plotOptions: {
+				series: {
+					 point: {
+						events: {
+
+							drag: function (e) {
+								// $('#drag').html(
+									// 'Dragging <b>' + e.id + '</b>, <b>' + this.category + '</b> to <b>' + Highcharts.numberFormat(e.y, 2) + '</b>');
+							},
+							drop: function () {
+								var fuckthis=this.category;
+								var chart = $('#container').highcharts();
+								var tmp_point = 0;
+								chart.series[0].data.forEach(function(entry) {
+									// console.log(parseFloat(entry.x.toFixed(0)));
+									// console.log(parseFloat(fuckthis).toFixed(0));
+									// console.log("-------------------------------------------");
+									if (parseFloat(entry.x.toFixed(0)) == parseFloat(fuckthis).toFixed(0)){
+										tmp_point++;
+										// console.log(entry)
+									}
+								});
+								if (tmp_point>=2){
+										//POINT ERROR
+										$("#error").show();
+										$("#day").prop('disabled', true);
+										$("#accept").prop('disabled', true);
+										error_exist=1;
+								} else {
+										$("#error").hide();
+										$("#day").prop('disabled', false);
+										$("#accept").prop('disabled', false);
+										error_exist=0;
+								};
+								// $('#drop').html(
+									// 'In <b>' + this.series.name + '</b>, <b>' + this.category + '</b> was set to <b>' + Highcharts.numberFormat(this.y, 2) + '</b>');
+							}
+						}
+					},
+					// color: '#FF0000',
+					marker: {
+						enabled: true,
+						symbol: 'circle',
+						radius: 12
+					}
+				}
+			},
+            series: [{
+                name: 'Температура',
+                data: grafs[day].slice(),
+				type: 'scatter',
+                draggableY: true,
+				dragMaxY:40,
+				dragMinY:0,
+				draggableX: true,
+				dragMaxX:23,
+				dragMinX:0
+
+            }],
+            legend: {
+                enabled: false
+            },
+        });
+    });
+$("#switcher_PMT").bootstrapSwitch({
+	onText:"Вкл",
+	offText:"Выкл",
+	labelWidth:10,
+	onSwitchChange:function(event, state) {
+		if (state){
+			$("#pmt_top").prop('disabled', false);
+			$("#pmt_bot").prop('disabled', false);
+		} else {
+			$("#pmt_top").prop('disabled', true);
+			$("#pmt_bot").prop('disabled', true);
+		}
+	}
+});
+$("#switcher_MOD").bootstrapSwitch({
+	onText:"Вкл",
+	offText:"Выкл",
+	labelWidth:10,
+	onSwitchChange:function(event, state) {
+		if (state){
+			$("#switcher_ST1").prop('disabled', true);
+			$("#switcher_ST2").prop('disabled', true);
+            $("#stages").slideUp();
+            $("#tens").fadeOut();
+            $("#mod").fadeIn();
+        } else {
+			$("#switcher_ST1").prop('disabled', false);
+			$("#switcher_ST2").prop('disabled', false);
+			$("#stages").slideDown();
+            $("#mod").fadeOut();
+            $("#tens").fadeIn();
+        }
+	}
+});
+$("#switcher_ST1").bootstrapSwitch({
+	onText:"Вкл",
+	offText:"Выкл",
+	labelWidth:10
+});
+$("#switcher_ST2").bootstrapSwitch({
+	onText:"Вкл",
+	offText:"Выкл",
+	labelWidth:10
+});
+$("#permanent_t_opt").bootstrapSwitch({
+	onText:"Вкл",
+	offText:"Выкл",
+	labelWidth:10,
+	onSwitchChange:function(event, state) {
+			// console.log(state);
+			if (state){
+				$("#permanent_t").prop('disabled', false);
+			} else{
+				$("#permanent_t").prop('disabled', true);
+			}
+	}		
+});
+$("#switcher_GRAF").bootstrapSwitch({
+	onText:"Неделя",
+	offText:"День",
+	labelWidth:5,
+	onSwitchChange:function(event, state) {
+			// console.log(state);
+			if (state){
+				$("#grafs_t").show();
+				if (error_exist==1){
+					//POINT ERROR
+					$("#error").show();
+					$("#accept").prop('disabled', true);
+				}
+				var chart = $('#container').highcharts();
+				var newarray=[];
+				var i = 0;
+				chart.series[0].data.forEach(function(entry) {
+					newarray[i] = [];
+					newarray[i].push(parseFloat(entry.x.toFixed(0)));
+					if(chartValType == 'float'){
+						newarray[i].push(parseFloat(entry.y.toFixed(1)));
+					} else {
+						newarray[i].push(parseFloat(entry.y.toFixed(0)));
+					}
+					i++;
+				});
+				grafs[day]=[];
+				grafs[day]=newarray.slice();
+				day = $( "#day" ).val();
+				chart.series[0].setData(grafs[day]);
+			} else {
+				$("#grafs_t").hide();
+				$("#accept").prop('disabled', false);	
+				$("#error").hide();
+				var chart = $('#container').highcharts();
+				var newarray=[];
+				var i = 0;
+				chart.series[0].data.forEach(function(entry) {
+					newarray[i] = [];
+					newarray[i].push(parseFloat(entry.x.toFixed(0)));
+					if(chartValType == 'float'){
+						newarray[i].push(parseFloat(entry.y.toFixed(1)));
+					} else {
+						newarray[i].push(parseFloat(entry.y.toFixed(0)));
+					}
+					i++;
+				});
+				grafs[day]=[];
+				grafs[day]=newarray.slice();
+				// day = $( "#day" ).val();
+				day = "every_day";
+				chart.series[0].setData(grafs[day]);
+			}
+	}
+});
+$("#switcher").bootstrapSwitch({
+		onText:"Вкл",
+		offText:"Выкл",
+		labelWidth:10,
+		onSwitchChange:function(event, state) {
+			// console.log(state);
+			if (state){
+				$('#permanent_t_div').hide();
+				if ($("#switcher_GRAF").bootstrapSwitch('state')==true){
+					$('#grafs_t').show();
+				} 
+				$('#grafs').show();
+				$("#switcher_GRAF_div").show();
+				var chart = $('#container').highcharts();
+				var el = $('#container');
+				el.css('width','100%');
+				chart.setSize(el.width(),400);
+				$("html, body").animate({ scrollTop: $(document).height() }, 1000);
+				if (error_exist==1){
+					//POINT ERROR
+					$("#error").show();
+					$("#day").prop('disabled', true);
+					$("#accept").prop('disabled', true);
+				}
+			} else {
+				$('#permanent_t_div').show();
+				$('#grafs_t').hide();
+				$('#grafs').hide();
+				$("#error").hide();
+				$("#switcher_GRAF_div").hide();
+				$("#day").prop('disabled', false);
+				$("#accept").prop('disabled', false);				
+			}
+		}
+	});
+window.onresize = function(event) {
+    				var chart = $('#container').highcharts();
+				var el = $('#container');
+				el.css('width','100%');
+				chart.setSize(el.width(),400);
+};
+$(function () {
+  $('[data-toggle="tooltip"]').tooltip()
+})
+
+var modState = 'Выкл' === 'checked';
+$('#updateModToActual').click(function(){
+	if($("#switcher_MOD").bootstrapSwitch('state') !== modState){
+		$("#switcher_MOD").bootstrapSwitch('state', modState);
+		$("#mod_state_changed").fadeOut();
+	}
+});
+if (sn_demo != 'demo'){
+setInterval(function() {
+		var url             = "https://my.tenko.ua/ajax/home";
+		var $post           = {};
+		$post.sn			= "211229_005";
+		// $.ajaxSetup({
+		//    headers: { 'X-CSRF-Token' : $('meta[name=csrf-token]').attr('content') }
+		// });
+		$.ajax({
+			type: "POST",
+			url: url,
+			data: $post,
+			cache: false,
+			success: function(data){
+//					 console.log(data);
+					 var error_class="alert-danger";
+					
+					if (data.Err==1){
+						$("#error_div").show();
+						if (data.Err_type_total==1){
+							$("#Err_type_total").show();
+						} else {
+							$("#Err_type_total").hide();
+						}
+						if (data.Err_type_time==1){
+							$("#Err_type_time").show();
+						} else {
+							$("#Err_type_time").hide();
+						}
+						if (data.Err_type==1){
+							if(data.New_err_text.length > 0){
+								$("#Err_type").html(`<span>${data.New_err_text}</span>`)
+							} else {
+								$("#Err_type").html(`<button class="btn-link-danger text-danger" onclick="drag_info()">Ошибка элемента</button>`)
+							}
+							$("#Err_type").show();
+						} else {
+							$("#Err_type").hide();
+						}
+						if (data.Err_type_3==1){
+							$("#Err_type_3").show();
+							$("#Err_type_3 span").text(data.Err_type_3_text);
+						} else {
+							$("#Err_type_3").hide();
+							$("#Err_type_3 span").text('');
+						}
+						if (data.NA_err==1){
+							$("#NA_err").show();
+						} else {
+							$("#NA_err").hide();
+						}
+						if (data.Davl_err==1){
+							$("#Davl_err").show();
+							$("#Davl_err span").text(data.Davl_err_text);
+						} else {
+							$("#Davl_err").hide();
+							$("#Davl_err span").text('');
+						}
+					} else {
+						$("#error_div").hide();
+					};
+					
+					// $("#TA_info").html(data.TA);
+					// TA_info
+					if (data.TA=="Err"){ 
+						$("#TA_info").html("Ошибка");
+						$("#TA_info").css("color","#E42F2B");
+					}else {
+						$("#TA_info").html(data.TA);
+						$("#TA_info").css("color","#fff");
+					};
+					
+					$("#TF_info").html(data.TF);
+					// $("#TF_info2").html(data.TF);
+					if (data.TF=="Ошибка"){ 
+						$("#TF_info").parent().parent().parent().addClass(error_class);
+					}else {
+						$("#TF_info").parent().parent().parent().removeClass(error_class);
+					};
+					// TF_info
+					
+					if(!data.Sens){
+						$('.ext_pmt').show()
+						if ($("#switcher").bootstrapSwitch('state')==false){
+							$('#grafs_t').hide();
+						} else {
+								$('#permanent_t_div').hide()
+								$('#grafs').show();
+							}
+						$('.anti_ext_pmt').hide()
+					} else {
+						$('.ext_pmt').hide()
+						$('.anti_ext_pmt').show()
+						$("#Sens_info").html(data.SensText);
+						if(data.Sens[0] == 'ext'){
+							$('#Sens_ext').show()
+							$('#Sens_ext h3').text(data.Sens[1].toUpperCase())
+							$('#Sens_temp').hide();
+							$('#grafs').hide();
+						} else {
+							$('.ext_pmt').show()
+							if ($("#switcher").bootstrapSwitch('state')==false){
+								$('#grafs_t').hide();
+							} else {
+								$('#permanent_t_div').hide()
+								$('#grafs').show();
+							}
+							$('.anti_ext_pmt').hide()
+							$('.rs-info').show()
+							$('#Sens_temp').show()
+							$('#Sens_ext').hide();
+						}
+					}
+					$("#TR_info").html(data.TR);
+					if (data.TR=="Ошибка"){ 
+						$("#TR_info").parent().parent().parent().addClass(error_class);
+					}else {
+						$("#TR_info").parent().parent().parent().removeClass(error_class);
+					};
+					// TR_info
+					
+					// $("#DP_info").html(data.DP);
+					// if (data.DP=="Ошибка"){ 
+						// $("#DP_info").parent().parent().parent().addClass(error_class);
+					// }else {
+						// $("#DP_info").parent().parent().parent().removeClass(error_class);
+					// };
+					// DP_info
+					
+					$("#NA_info").html(data.NA);
+					if (data.NA=="Ошибка"){ 
+						$("#NA_info").parent().parent().parent().addClass(error_class);
+					}else {
+						$("#NA_info").parent().parent().parent().removeClass(error_class);
+					};
+					// console.log(data);
+					if(data.Davl == '') {
+						$('.davl_state').hide()
+					} else {
+						$('.davl_state').show()
+					}
+					if (data.Davl=="Ошибка"){ 
+						$("#Davl_info").parent().parent().parent().addClass(error_class);
+					}else {
+						$("#Davl_info").parent().parent().parent().removeClass(error_class);
+					};
+					$("#Davl_info").html(data.Davl);
+					// NA_info		
+				//update 11.12.2015 					
+					$("#span_TEN1").html(data.TEN1);
+						$("#span_TEN1").removeClass();
+						$("#span_TEN1").addClass(data.TEN1_class);				
+					$("#span_TEN2").html(data.TEN2);
+						$("#span_TEN2").removeClass();
+						$("#span_TEN2").addClass(data.TEN2_class);
+				//update 11.12.2015 END
+				//update 27.10.2017
+					$("#span_ModAmount").html(data.ModAmount);
+					$("#span_ModStatus").html(data.ModStatus);
+					if(data.ModStatus == 'Ошибка'){
+						$("#span_ModStatus").parent().css("color", "red");
+					}else{
+                        $("#span_ModStatus").parent().css("color", "white");
+					};
+					if(data.MOD == 'checked'){
+                        if($("#switcher_MOD").bootstrapSwitch('state') == false){
+                            $("#mod_state_changed").fadeIn();
+                            $("#tens").fadeOut();
+                            $("#mod").fadeIn();
+                            modState = true;
+                        }
+					}else {
+                        if ($("#switcher_MOD").bootstrapSwitch('state') == true){
+                            $("#mod_state_changed").fadeIn();
+							$("#mod").fadeOut();
+							$("#tens").fadeIn();
+                            modState = false;
+						}
+					}
+
+				//update 27.10.2017 END
+				//update 05.03.2018
+				console.log(data.AF);
+                $("#AF_info").html(data.AF == 'On' ? 'Проверка': (data.AF == 'Off' ? 'Ожидание':'Нагрев'));
+                if (data.AF=="Err"){
+                    $("#AF_info").parent().parent().parent().addClass(error_class);
+                }else {
+                    $("#AF_info").parent().parent().parent().removeClass(error_class);
+                };
+                //update 05.03.2018 END
+					$("#ST1_info").html(data.ST1);
+					if (data.ST1=="Ошибка"){ 
+						$("#ST1_info").parent().parent().parent().addClass(error_class);
+					}else {
+						$("#ST1_info").parent().parent().parent().removeClass(error_class);
+					};
+					// ST1_info
+					
+					$("#ST2_info").html(data.ST2);
+					if (data.ST2=="Ошибка"){ 
+						$("#ST2_info").parent().parent().parent().addClass(error_class);
+					}else {
+						$("#ST2_info").parent().parent().parent().removeClass(error_class);
+					};
+					// ST2_info
+					
+					// console.log(data.PM[1])
+					$("#PM_info1").html(data.PM[0]);
+					$("#PM_info2").html(data.PM[1]);
+					if (data.PM[0]=="Ошибка"){ 
+						$("#PM_info").parent().parent().parent().addClass(error_class);
+					}else {
+						$("#PM_info").parent().parent().parent().removeClass(error_class);
+					};
+					// PM_info
+			}
+		});
+		return false;
+	}, 5000);
+}
+});
+function copyDayChart(e, from, to){
+    let chart = $('#container').highcharts();
+//    e.preventDefault();
+	console.log(e);
+    grafs[to] = grafs[from];
+    chart.series[0].setData(grafs[to]);
+    console.log(grafs);
+}
+</script>
+    </div>
+
+   
+
+
+
+</body></html>

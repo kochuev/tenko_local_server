@@ -1,0 +1,29 @@
+:root { color-scheme: light dark; font-family: system-ui, sans-serif; }
+body { max-width: 1150px; margin: auto; padding: 1rem; }
+header, .toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: .8rem; }
+header h1 { margin-right: auto; }
+section { border: 1px solid #8886; border-radius: .6rem; padding: 1rem; margin-bottom: 1rem; }
+button, select, input { font: inherit; padding: .4rem; margin: .2rem; }
+button { cursor: pointer; }
+button:disabled { cursor: not-allowed; }
+label { display: inline-flex; gap: .3rem; align-items: center; }
+fieldset { border: 1px solid #8886; }
+pre { white-space: pre-wrap; overflow-wrap: anywhere; max-height: 24rem; overflow: auto; }
+#slots { display: grid; grid-template-columns: repeat(auto-fit, minmax(185px, 1fr)); gap: .4rem; }
+.slot { border: 1px solid #8886; border-radius: .3rem; padding: .5rem; }
+.slot label { display: flex; justify-content: space-between; }
+.slot input { width: 5rem; }
+#settings { display: grid; grid-template-columns: repeat(auto-fit, minmax(270px, 1fr)); }
+.setting { display: flex; justify-content: space-between; padding: .4rem; }
+.setting input, .setting select { width: 6rem; }
+#timeline { display: grid; grid-template-columns: repeat(24, minmax(24px, 1fr)); overflow-x: auto; margin: 1rem 0; }
+.hour { border: 1px solid #8886; min-height: 105px; display: flex; flex-direction: column; justify-content: space-between; font-size: .75rem; text-align: center; }
+.hour.on { background: #d778213b; border-top: 5px solid #dd831c; }
+.hour.off { background: #368fbc33; border-top: 5px solid #368fbc; }
+.hour.unknown { background: repeating-linear-gradient(45deg, #8882, #8882 5px, transparent 5px, transparent 10px); }
+#week { display: grid; grid-template-columns: repeat(auto-fit, minmax(135px, 1fr)); gap: .3rem; }
+.week-day { display: block; text-align: left; font-size: .8rem; }
+#message, #validation, #warnings { white-space: pre-line; }
+.error { color: #d63737; }
+.ok { color: #248530; }
+@media (max-width: 600px) { body { padding: .5rem; } section { padding: .7rem; } }

@@ -1,0 +1,5 @@
+# Replace the example hostname and point its DNS to this reverse proxy.
+# Make this editor available only on a trusted LAN/VPN.
+tenko.example.net {
+    reverse_proxy tenko:9080
+}
