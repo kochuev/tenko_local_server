@@ -198,10 +198,56 @@ class StoreTests(unittest.TestCase):
         record = self.store.get(self.serial)
         self.assertEqual(record["command_state"], "error")
         self.assertTrue(record["pending"])
+        self.assertEqual(state(record)["modulation"], "Off")
         record, response = self.store.report(self.raw)
         self.assertTrue(response.startswith("NewData:"))
         self.assertTrue(record["pending"])
         self.assertFalse(hasattr(self.store, "cancel"))
+
+    def test_controls_keep_accepted_values_through_upload_status_and_restart(self):
+        desired = {"TMP": ["On", 21.5], "USE": "GraphW", "MOD": "Off", "FI": [55, 3]}
+        expected = {"constant_enabled": "On", "constant_target": 21.5,
+                    "mode": "GraphW", "schedule_mode": "Individual days",
+                    "modulation": "Off", "flow_cutoff": 55, "flow_hysteresis": 3}
+        record = self.store.command(self.serial, desired)
+        snapshots = [record]
+        self.assertEqual(record["report"]["settings"]["TMP"], ["Off", 6.9])
+        record, response = self.store.report(self.raw)
+        self.assertTrue(response.startswith("NewData:"))
+        snapshots.append(record)
+        record = self.store.status({"sn": self.serial, "status": "0"},
+                                   method="POST", path="/update/status")
+        self.assertEqual(record["pending"], desired)
+        self.assertEqual(record["command_state"], "pending")
+        snapshots.append(record)
+        self.store.close()
+        self.store = Store(self.path)
+        snapshots.append(self.store.get(self.serial))
+        confirmed_raw = {**self.raw, "TMP": "[On,21.5]", "USE": "GraphW",
+                         "MOD": "Off,Off,0,3", "FI": "[55,3]"}
+        confirmed, response = self.store.report(confirmed_raw)
+        self.assertEqual(response, "nochange")
+        self.assertEqual(confirmed["command_state"], "applied")
+        self.assertEqual(confirmed["pending"], {})
+        snapshots.append(confirmed)
+        for snapshot in snapshots:
+            with self.subTest(command_state=snapshot["command_state"]):
+                values = state(snapshot)
+                self.assertEqual({key: values[key] for key in expected}, expected)
+                self.assertEqual(values["heating_on"], "Off")
+        record, _ = self.store.report({**confirmed_raw, "TMP": "[On,22.0]"})
+        self.assertEqual(state(record)["constant_target"], 22)
+
+    def test_report_of_older_command_does_not_replace_newer_pending_value(self):
+        self.store.component_command(self.serial, "TMP", 1, "21")
+        self.store.report(self.raw)
+        self.store.component_command(self.serial, "TMP", 1, "22")
+        older_raw = {**self.raw, "TMP": "[Off,21.0]"}
+        record, response = self.store.report(older_raw)
+        self.assertIn(";TMP=Off,22.0;", response)
+        self.assertEqual(state(record)["constant_target"], 22)
+        self.assertEqual(record["report"]["settings"]["TMP"][1], 21)
+        self.assertEqual(record["command_state"], "pending")
 
     def test_atomic_write_failure_keeps_previous_file_and_memory(self):
         before = self.path.read_text()
@@ -428,12 +474,20 @@ class MQTTTests(unittest.TestCase):
             topic=f"tenko/{self.serial}/command/modulation", payload=b"Off", retain=True))
         self.assertEqual(self.store.get(self.serial)["pending"], {})
 
-    def test_command_state_remains_reported_until_confirmation(self):
+    def test_control_shows_accepted_value_without_claiming_confirmation(self):
         self.bridge.on_message(None, None, SimpleNamespace(
             topic=f"tenko/{self.serial}/command/modulation", payload=b"Off", retain=False))
         record = self.store.get(self.serial)
         self.assertEqual(record["pending"], {"MOD": "Off"})
-        self.assertEqual(state(record)["modulation"], "On")
+        self.assertEqual(state(record)["modulation"], "Off")
+        self.assertEqual(record["report"]["settings"]["MOD"], "On")
+        self.assertEqual(record["command_state"], "pending")
+        self.bridge.emit(self.serial)
+        self.bridge.on_message(None, None, SimpleNamespace(
+            topic="homeassistant/status", payload=b"online", retain=False))
+        published_states = [payload for topic, payload in self.messages if topic == f"tenko/{self.serial}/state"]
+        self.assertTrue(published_states)
+        self.assertTrue(all(values["modulation"] == "Off" for values in published_states))
 
     def test_invalid_command_reports_error(self):
         self.bridge.on_message(None, None, SimpleNamespace(
@@ -496,13 +550,15 @@ class MQTTTests(unittest.TestCase):
         self.assertEqual(self.store.get(self.serial)["pending"], {"MOD": "Off"})
         self.assertEqual(self.store.get(self.serial)["command_state"], "error")
 
-    def test_schedule_mode_uses_wire_values_and_confirmed_state(self):
+    def test_schedule_mode_uses_wire_values_and_keeps_pending_selection(self):
         self.assertEqual(state(self.record)["schedule_mode"], "Whole week")
         self.bridge.on_message(None, None, SimpleNamespace(
             topic=f"tenko/{self.serial}/command/schedule_mode", payload=b"Individual days", retain=False))
         record = self.store.get(self.serial)
         self.assertEqual(record["pending"]["USE"], "GraphW")
-        self.assertEqual(state(record)["schedule_mode"], "Whole week")
+        self.assertEqual(state(record)["schedule_mode"], "Individual days")
+        self.assertEqual(state(record)["mode"], "GraphW")
+        self.assertEqual(record["report"]["settings"]["USE"], "GraphD")
         self.store.report(self.raw)
         record, _ = self.store.report({**self.raw, "USE": "GraphW"})
         self.assertEqual(state(record)["schedule_mode"], "Individual days")

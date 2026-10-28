@@ -12,7 +12,7 @@ from urllib.request import Request, urlopen
 
 import paho.mqtt.client as mqtt
 
-from tenko.protocol import form
+from tenko.protocol import form, parse_report
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -186,6 +186,19 @@ class DockerFlowTests(unittest.TestCase):
         self.wait_state(lambda value: value["schedule_mode"] == "Individual days"
                         and value["command_state"] == "applied")
 
+        reported_fi = parse_report(self.raw)["settings"]["FI"]
+        desired_cutoff = 55 if reported_fi[0] != 55 else 54
+        self.send("flow_cutoff", str(desired_cutoff))
+        self.wait_state(lambda value: value["flow_cutoff"] == desired_cutoff
+                        and value["command_state"] == "pending")
+        self.wait(lambda: self.topic_json("diagnostics")["pending"].get("FI", [None])[0] == desired_cutoff)
+        self.assertEqual(self.topic_json("diagnostics")["reported"]["FI"], reported_fi)
+        self.assertTrue(self.poll().startswith("NewData:"))
+        self.assertEqual(self.http("/update/status", b"sn=211229_005&status=0"), "status updated")
+        values = self.wait_state(lambda value: value["raw_status"] == "0")
+        self.assertEqual(values["flow_cutoff"], desired_cutoff)
+        self.assertEqual(values["command_state"], "pending")
+
         logs = self.docker("logs", self.app)
         for expected in ("HTTP payload dumps enabled", "HTTP IN", "HTTP EXCHANGE", "MQTT IN", "MQTT OUT",
                          "sn=211229_005&status=1", "status updated", uploaded):
@@ -221,4 +234,10 @@ class DockerFlowTests(unittest.TestCase):
         self.assertEqual(payload["options"], ["Whole week", "Individual days", "Constant temperature"])
         self.assertNotIn("configuration_url", payload["device"])
         self.wait_state(lambda value: value["schedule_MO_01_target"] == 21
-                        and value["schedule_mode"] == "Individual days")
+                        and value["schedule_mode"] == "Individual days"
+                        and value["flow_cutoff"] == desired_cutoff and value["command_state"] == "pending")
+        self.assertTrue(self.poll().startswith("NewData:"))
+        self.raw["FI"] = f"[{desired_cutoff},{reported_fi[1]}]"
+        self.assertEqual(self.poll(), "nochange")
+        self.wait_state(lambda value: value["flow_cutoff"] == desired_cutoff
+                        and value["command_state"] == "applied")

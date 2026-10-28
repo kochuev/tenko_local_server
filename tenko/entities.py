@@ -168,7 +168,7 @@ def state(record):
         values[f"schedule_{schedule}"] = f"{len(points)} stored points" if points else None
     for entity in ENTITIES:
         if entity.setting:
-            value = settings.get(entity.setting)
+            value = record["pending"].get(entity.setting, settings.get(entity.setting))
             if entity.index is not None:
                 value = value[entity.index] if isinstance(value, list) else None
             if entity.kind == "number":

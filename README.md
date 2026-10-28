@@ -43,6 +43,9 @@ controls, or use the standard cards in
 creates entities, not dashboard cards or views. Paste the YAML into a manual
 dashboard using HA's raw configuration editor; adapt entity IDs to your registry.
 It includes separate **Boiler** and **Schedule** views, with no custom cards.
+The built-in device page has fixed HA sections: MQTT discovery cannot add
+custom schedule sections or control their sorting. Ordinary boiler parameters
+remain in Configuration; custom grouping/order is available only in dashboards.
 
 ## Native Home Assistant configuration
 
@@ -59,9 +62,13 @@ thresholds, and pump lead-in/run-on delays. A select chooses:
 | `GraphD` | Repeating daily timetable, ED |
 | `GraphW` | Weekly Monday-Sunday timetables, MO-SU |
 
-These controls show **boiler-reported values**, not optimistic values.
-A change queues a command for the next boiler poll. **Settings upload status**
-remains `pending` until a later report confirms it. Inspect
+These controls show **accepted pending values** while a command is waiting
+for confirmation, otherwise boiler-reported values. A change queues a command
+for the next boiler poll, without snapping the field back to the old value.
+The original reported settings remain separately available in MQTT diagnostics;
+telemetry such as measured temperatures and actual heating is never overridden.
+**Settings upload status** remains `pending` until a later parameter report
+confirms it. Inspect
 **Settings command error** if a command is rejected or not confirmed.
 Accepted uploads keep retrying until the boiler confirms them; there is no
 pending-upload cancellation control.
@@ -114,7 +121,7 @@ a subsequent report confirms the values, then becomes `applied`.
 **Individual days** (`GraphW`, Monday-Sunday). **Constant temperature** (`Temp`)
 is also shown so an existing nonschedule mode is represented accurately.
 This selector and the ordinary Control mode select configure the same USE
-setting, and both show confirmed state.
+setting, and both show the same accepted pending or reported value.
 
 Point fields show **pending values** while an accepted change is waiting for
 confirmation, otherwise boiler-reported values. Each day's **schedule layer**
@@ -215,7 +222,7 @@ For default prefixes and serial `211229_005`:
 | `tenko/bridge/availability` | Bridge online / LWT offline |
 | `tenko/211229_005/availability` | Parameter-report freshness |
 | `tenko/211229_005/status_availability` | Independent separate-status freshness |
-| `tenko/211229_005/state` | Confirmed components, pending point values and upload status |
+| `tenko/211229_005/state` | Actual telemetry, accepted pending control values and upload status |
 | `tenko/211229_005/diagnostics` | Raw/decoded parameters, last raw status request/method/path, reported settings, pending commands, legacy unsent drafts and assumptions |
 | `tenko/211229_005/schedules/ED` | `{points, displayed_points, pending, layer, validation_error, ...}`; equivalent topics for MO-SU |
 | `tenko/211229_005/command/<entity-key>` | Native control command, never retained |
@@ -294,6 +301,10 @@ STATUS_PATH/STATUS_METHOD can override the endpoint if needed; supported
 form-body methods are POST/PUT/PATCH. Raw status and its timestamp remain
 independent of MOD/TEN telemetry. **Status meanings are unknown**: no status
 code is interpreted as heating, and no separate-heating entity is published.
+Its timing after `NewData` suggests it may acknowledge an update, but neither
+the status code meaning nor an association with a specific command is verified.
+A status request therefore does not clear pending settings or mark them
+applied; matching parameter values remain the confirmation.
 
 TA/TF/TR, PM-associated temperature and pressure are measurements. NA, TEN1/
 TEN2, MOD heating/counts, PM state and AF phase are actual states, not settings.
