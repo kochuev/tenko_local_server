@@ -54,6 +54,7 @@ class DockerFlowTests(unittest.TestCase):
         self.broker = self.network + "-mqtt"
         self.app = self.network + "-app"
         self.latest = {}
+        self.energy_discovery = []
         self.messages_lock = threading.Lock()
         self.client = self.make_client()
         self.addCleanup(self.cleanup)
@@ -72,6 +73,18 @@ class DockerFlowTests(unittest.TestCase):
         for kind, key in OBSOLETE_DISCOVERY:
             self.client.publish(f"homeassistant/{kind}/tenko_211229_005/{key}/config",
                                 '{"name":"Obsolete control"}', qos=1, retain=True).wait_for_publish(3)
+        old_energy = json.dumps({
+            "name": "Boiler period consumption (presumed kWh)",
+            "unique_id": "tenko_211229_005_period_amount",
+            "state_topic": "tenko/211229_005/state",
+            "value_template": "{{ value_json.period_amount }}",
+            "unit_of_measurement": "kWh",
+            "entity_category": "diagnostic",
+            "device": {"identifiers": ["tenko_211229_005"], "name": "Tenko Boiler"},
+        })
+        self.client.publish("homeassistant/sensor/tenko_211229_005/period_amount/config",
+                            old_energy, qos=1, retain=True).wait_for_publish(3)
+        self.wait(lambda: self.latest.get("homeassistant/sensor/tenko_211229_005/period_amount/config") == old_energy)
         self.start_app("debug")
         self.raw = form(next(line for line in (ROOT / "prompt.md").read_text().splitlines()
                              if line.startswith("sn=")).encode())
@@ -107,6 +120,8 @@ class DockerFlowTests(unittest.TestCase):
     def on_message(self, client, userdata, message):
         with self.messages_lock:
             self.latest[message.topic] = message.payload.decode()
+            if message.topic == "homeassistant/sensor/tenko_211229_005/period_amount/config":
+                self.energy_discovery.append(message.payload.decode())
 
     def topic_json(self, suffix):
         with self.messages_lock:
@@ -256,12 +271,27 @@ class DockerFlowTests(unittest.TestCase):
             constant = json.loads(self.latest["homeassistant/climate/tenko_211229_005/constant_thermostat/config"])
             minimum = json.loads(self.latest["homeassistant/climate/tenko_211229_005/minimum_thermostat/config"])
             energy = json.loads(self.latest["homeassistant/sensor/tenko_211229_005/period_amount/config"])
+            migration = self.energy_discovery.copy()
+            for key, name in (("clock", "Boiler clock"), ("frost", "AF-5"),
+                              ("error", "Error Code"), ("pump", "Pump")):
+                sensor = json.loads(self.latest[f"homeassistant/sensor/tenko_211229_005/{key}/config"])
+                self.assertEqual(sensor["name"], name)
+                self.assertNotIn("entity_category", sensor)
+                self.assertEqual(sensor["unique_id"], f"tenko_211229_005_{key}")
+        self.assertEqual(len(migration), 3)
+        self.assertEqual(json.loads(migration[0])["device"]["identifiers"], ["tenko_211229_005"])
+        self.assertEqual(migration[1], "")
+        self.assertEqual(json.loads(migration[2]), energy)
         self.assertEqual((constant["min_temp"], constant["max_temp"], constant["temp_step"]), (7, 30, .1))
         self.assertEqual(minimum["modes"], ["off", "heat_cool"])
         self.assertEqual(energy["device"]["name"], "TENKO Boiler Energy Meter")
         self.assertEqual(energy["device"]["via_device"], "tenko_211229_005")
         self.assertEqual(energy["unique_id"], "tenko_211229_005_period_amount")
         self.assertEqual(self.topic_json("state")["period_amount"], parse_report(self.raw)["decoded"]["STA"][1])
+        self.client.publish("homeassistant/status", "online", qos=1).wait_for_publish(3)
+        self.wait(lambda: len(self.energy_discovery) == 4)
+        with self.messages_lock:
+            self.assertEqual(json.loads(self.energy_discovery[-1]), energy)
 
         self.send("constant_target", "30.1")
         self.wait_state(lambda value: "7..30" in value["command_error"])

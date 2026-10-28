@@ -324,7 +324,9 @@ TEN1 and TEN2 are labeled **Heating element 1** and **Heating element 2**.
 These use plain On/Off binary sensors, not the
 heat device class that Home Assistant renders as Hot/Normal. Their existing
 unique IDs are preserved, so an existing registry may retain old entity IDs.
-**AF-5**, **Pump state**, **Error Code** and **Boiler clock** are normal Sensors.
+**AF-5**, **Pump**, **Error Code** and **Boiler clock** are normal Sensors,
+not Diagnostics. Their discovery entries are recreated once at bridge startup
+to clear old registry categories, keeping their unique IDs and history.
 The clock is formatted as `HH:MM`, without inventing a timezone.
 AF Off means standby; On means checking, not enabled. Err is shown as its
 reported Error Code without inventing a numbered fault description. Raw weekday, sensor
@@ -356,6 +358,13 @@ using the same `STA[1]` reading previously named Boiler period consumption.
 Its existing MQTT unique ID and `period_amount` state key are preserved;
 HA may therefore retain the old entity ID. New installations normally use
 `sensor.tenko_boiler_energy_meter_energy`.
+
+Older HA versions do not move an existing MQTT entity when only its device
+metadata changes, leaving the new energy-meter device empty. On the first
+discovery per bridge startup, the bridge removes and recreates the Energy
+discovery configuration in order. HA re-registers the sensor on the energy
+meter while retaining its unique ID and history. Later discovery refreshes
+update it normally; no manual device deletion is needed.
 
 This is the boiler's reported **period total**, not a verified lifetime
 counter. It has energy device class but deliberately no `total` or

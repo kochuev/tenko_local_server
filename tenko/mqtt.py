@@ -5,7 +5,7 @@ import time
 
 import paho.mqtt.client as mqtt
 
-from .entities import BY_KEY, ENTITIES, REMOVED_ENTITIES, discovery, enabled_entities, state
+from .entities import BY_KEY, ENTITIES, RECREATE_ENTITIES, REMOVED_ENTITIES, discovery, enabled_entities, state
 from .protocol import SCHEDULES, SERIAL, THERMOSTAT_COMMANDS
 from .schedule_editor import SCHEDULE_MODES, details
 
@@ -160,8 +160,12 @@ class Bridge:
                 self.publish(f"{base}/schedule_editor", "")
                 visible = enabled_entities(config)
                 for entity in ENTITIES:
-                    self.publish(f"{config.discovery_prefix}/{entity.kind}/tenko_{serial}/{entity.key}/config",
-                                 discovery(entity, serial, firmware, config) if entity in visible else "")
+                    topic = f"{config.discovery_prefix}/{entity.kind}/tenko_{serial}/{entity.key}/config"
+                    if entity.key in RECREATE_ENTITIES and serial not in self.firmwares:
+                        # HA can retain old registry categories/device associations.
+                        # Recreate once, retaining each entity's unique ID.
+                        self.publish(topic, "")
+                    self.publish(topic, discovery(entity, serial, firmware, config) if entity in visible else "")
                 if config.log_level.upper() != "DEBUG":
                     self.publish(f"{base}/diagnostics", "")
                 if self.connected:

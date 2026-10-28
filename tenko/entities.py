@@ -36,7 +36,7 @@ ENTITIES = [
     Entity("minimum_thermostat", "Maintaining Minimum Temperature", kind="climate"),
 ]
 for key, name in (
-    ("pump", "Pump state"), ("frost", "AF-5"), ("error", "Error Code"),
+    ("pump", "Pump"), ("frost", "AF-5"), ("error", "Error Code"),
     ("clock", "Boiler clock"), ("command_state", "Settings upload status"),
     ("command_error", "Settings command error"),
 ):
@@ -106,6 +106,7 @@ for day in SCHEDULES:
         Entity(f"schedule_{day}_validation", f"{DAY_NAMES[day]} schedule validation", category="config"),
     ])
 BY_KEY = {entity.key: entity for entity in ENTITIES}
+RECREATE_ENTITIES = ("period_amount", "pump", "frost", "error", "clock")
 REMOVED_ENTITIES = (
     ("select", "editor_day"), ("select", "editor_slot"), ("select", "editor_copy_to"),
     ("number", "editor_hour"), ("number", "editor_target"), ("switch", "editor_off"),

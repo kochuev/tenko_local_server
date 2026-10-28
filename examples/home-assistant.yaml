@@ -16,7 +16,7 @@ views:
           - binary_sensor.tenko_boiler_heating_element_1
           - binary_sensor.tenko_boiler_heating_element_2
           - sensor.tenko_boiler_modulated_power
-          - sensor.tenko_boiler_pump_state
+          - sensor.tenko_boiler_pump
           - sensor.tenko_boiler_af_5
           - sensor.tenko_boiler_boiler_clock
           - sensor.tenko_boiler_error_code

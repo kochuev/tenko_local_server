@@ -686,9 +686,13 @@ class MQTTTests(unittest.TestCase):
         self.assertNotIn("heating", BY_KEY)
 
     def test_operational_sensor_names_categories_and_clock_time(self):
-        for key, name in (("frost", "AF-5"), ("error", "Error Code"), ("clock", "Boiler clock"), ("pump", "Pump state")):
+        for key, name in (("frost", "AF-5"), ("error", "Error Code"), ("clock", "Boiler clock"), ("pump", "Pump")):
             self.assertEqual(BY_KEY[key].name, name)
             self.assertIsNone(BY_KEY[key].category)
+            for level in ("INFO", "DEBUG"):
+                payload = discovery(BY_KEY[key], self.serial, None, Config(log_level=level))
+                self.assertNotIn("entity_category", payload)
+                self.assertNotIn("command_topic", payload)
         self.assertEqual(state(self.record)["clock"], "19:23")
         record, _ = self.store.report({**self.raw, "TIM": "[0,5,4,28,10,26]"})
         self.assertEqual(state(record)["clock"], "00:05")
@@ -711,6 +715,51 @@ class MQTTTests(unittest.TestCase):
         for key in ("statistics_days", "day_amount", "week_amount", "month_0", "month_11"):
             self.assertTrue(BY_KEY[key].debug_only)
 
+    def test_energy_discovery_is_recreated_once_to_move_existing_entity(self):
+        self.bridge.connected = True
+        self.bridge.emit(self.serial, discover=True)
+        topic = f"homeassistant/sensor/tenko_{self.serial}/period_amount/config"
+        payloads = [payload for name, payload in self.messages if name == topic]
+        self.assertEqual(len(payloads), 2)
+        self.assertEqual(payloads[0], "")
+        self.assertEqual(payloads[1]["unique_id"], f"tenko_{self.serial}_period_amount")
+        self.assertEqual(payloads[1]["device"]["identifiers"], [f"tenko_{self.serial}_energy_meter"])
+        self.assertEqual(payloads[1]["device"]["via_device"], f"tenko_{self.serial}")
+
+        self.messages.clear()
+        self.bridge.emit(self.serial, discover=True)
+        self.assertEqual([payload for name, payload in self.messages if name == topic], [payloads[1]])
+
+    def test_energy_migration_is_not_marked_complete_while_disconnected(self):
+        self.bridge.emit(self.serial, discover=True)
+        self.assertNotIn(self.serial, self.bridge.firmwares)
+        self.messages.clear()
+        self.bridge.connected = True
+        self.bridge.emit(self.serial, discover=True)
+        topic = f"homeassistant/sensor/tenko_{self.serial}/period_amount/config"
+        payloads = [payload for name, payload in self.messages if name == topic]
+        self.assertEqual(payloads[0], "")
+        self.assertEqual(payloads[1]["name"], "Energy")
+
+    def test_operational_sensor_categories_are_migrated_once_without_changing_ids(self):
+        self.bridge.connected = True
+        self.bridge.emit(self.serial, discover=True)
+        for key in ("clock", "frost", "error", "pump"):
+            topic = f"homeassistant/sensor/tenko_{self.serial}/{key}/config"
+            payloads = [payload for name, payload in self.messages if name == topic]
+            self.assertEqual(len(payloads), 2)
+            self.assertEqual(payloads[0], "")
+            self.assertEqual(payloads[1]["unique_id"], f"tenko_{self.serial}_{key}")
+            self.assertNotIn("entity_category", payloads[1])
+            self.assertEqual(payloads[1]["device"]["identifiers"], [f"tenko_{self.serial}"])
+        self.messages.clear()
+        self.bridge.emit(self.serial, discover=True)
+        for key in ("clock", "frost", "error", "pump"):
+            topic = f"homeassistant/sensor/tenko_{self.serial}/{key}/config"
+            payloads = [payload for name, payload in self.messages if name == topic]
+            self.assertEqual(len(payloads), 1)
+            self.assertIsInstance(payloads[0], dict)
+
     def test_debug_discovery_and_retained_data_are_removed_when_debug_is_off(self):
         for level in ("DEBUG", "INFO"):
             self.bridge.config = Config(log_level=level)
@@ -718,7 +767,7 @@ class MQTTTests(unittest.TestCase):
             self.bridge.emit(self.serial, discover=True)
             for entity in ENTITIES:
                 topic = f"homeassistant/{entity.kind}/tenko_{self.serial}/{entity.key}/config"
-                payload = next(payload for name, payload in self.messages if name == topic)
+                payload = next(payload for name, payload in reversed(self.messages) if name == topic)
                 self.assertEqual(bool(payload), not entity.debug_only or level == "DEBUG")
             values = next(payload for name, payload in self.messages if name == f"tenko/{self.serial}/state")
             self.assertEqual("day_amount" in values, level == "DEBUG")
