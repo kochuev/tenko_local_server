@@ -1,5 +1,5 @@
 # Paste as a manual dashboard (or copy the individual cards).
-# Replace 211229_005 with your serial. Entity IDs below are suggestions:
+# Entity IDs below are suggestions:
 # HA can choose different IDs, especially if entities already existed.
 title: Tenko Boiler
 views:
@@ -21,12 +21,58 @@ views:
           - select.tenko_boiler_control_mode
           - switch.tenko_boiler_constant_temperature_enabled
           - number.tenko_boiler_stored_air_target
+          - number.tenko_boiler_flow_cutoff
+          - number.tenko_boiler_flow_restart_drop
+          - number.tenko_boiler_return_cutoff
+          - number.tenko_boiler_return_restart_drop
+          - switch.tenko_boiler_pmt_preset_enabled
+          - number.tenko_boiler_pmt_restart_threshold
+          - number.tenko_boiler_pmt_stop_threshold
           - switch.tenko_boiler_automatic_modulation_enabled
+          - switch.tenko_boiler_manual_stage_1_enable_modulation_off_only
+          - switch.tenko_boiler_manual_stage_2_enable_modulation_off_only
+          - number.tenko_boiler_pump_lead_in_delay
+          - number.tenko_boiler_pump_run_on_delay
+          - select.tenko_boiler_manual_stage_conflict_source
+          - button.tenko_boiler_resolve_manual_stage_conflict_using_selected_source
           - sensor.tenko_boiler_settings_upload_status
-      - type: iframe
-        title: Schedule
-        url: https://tenko.example.net/?serial=211229_005
-        aspect_ratio: 120%
+          - sensor.tenko_boiler_settings_command_error
+          - button.tenko_boiler_cancel_pending_settings_upload
+      - type: entities
+        title: Schedule editor (draft, not confirmed state)
+        entities:
+          - select.tenko_boiler_schedule_editor_day
+          - select.tenko_boiler_schedule_editor_slot
+          - number.tenko_boiler_schedule_draft_hour
+          - number.tenko_boiler_schedule_draft_target_0_off
+          - switch.tenko_boiler_schedule_draft_off
+          - sensor.tenko_boiler_schedule_selected_reported_hour
+          - sensor.tenko_boiler_schedule_selected_reported_target
+          - sensor.tenko_boiler_schedule_editor_layer
+          - sensor.tenko_boiler_schedule_editor_validation
+          - button.tenko_boiler_apply_selected_schedule_draft
+          - button.tenko_boiler_apply_all_schedule_drafts
+          - button.tenko_boiler_discard_selected_schedule_draft
+          - button.tenko_boiler_discard_all_drafts
+          - select.tenko_boiler_schedule_copy_destination
+          - button.tenko_boiler_copy_selected_schedule_to_destination
+          - button.tenko_boiler_copy_selected_schedule_to_whole_week
+      - type: markdown
+        title: Selected timetable
+        content: |
+          {% set entity = 'sensor.tenko_boiler_schedule_editor_day_summary' %}
+          **{{ state_attr(entity, 'day_name') }}**
+          — {{ state_attr(entity, 'layer') }}
+
+          {{ state_attr(entity, 'validation_error') or '' }}
+
+          | Slot | Time | Target |
+          |---|---|---|
+          {% for point in state_attr(entity, 'points') or [] %}
+          | {{ loop.index }} | {{ '%02d:00' | format(point[0]) }} | {{ 'OFF' if point[1] == 0 else point[1] ~ ' C' }} |
+          {% endfor %}
+
+          Drafts upload only when Apply is pressed. Activation uses Control mode.
       - type: entities
         title: Boiler-reported consumption (reference only)
         entities:

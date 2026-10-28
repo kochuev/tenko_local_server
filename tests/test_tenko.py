@@ -1,4 +1,3 @@
-import base64
 import copy
 import json
 import tempfile
@@ -17,6 +16,7 @@ from tenko.entities import BY_KEY, ENTITIES, discovery, state
 from tenko.mqtt import Bridge
 from tenko.protocol import ORDER, SCHEDULES, form, parse_report, serialize, validate_setting
 from tenko.server import create_server
+from tenko.schedule_editor import details
 from tenko.store import Store
 
 
@@ -175,14 +175,14 @@ class StoreTests(unittest.TestCase):
         self.assertEqual(self.store.get(self.serial)["pending"], {"PMT": ["On", 14, 16]})
 
     def test_draft_persists_and_report_does_not_replace_it(self):
-        draft = {"ED": [[i * 2, 0] for i in range(10)]}
-        self.store.draft(self.serial, draft, 0)
+        self.store.editor_command(self.serial, "editor_day", "Monday")
+        record = self.store.editor_command(self.serial, "editor_hour", "1")
+        draft = record["draft"]
         self.store.report(self.raw)
         self.store.close()
         self.store = Store(self.path)
         self.assertEqual(self.store.get(self.serial)["draft"], draft)
-        with self.assertRaisesRegex(ValueError, "another editor"):
-            self.store.draft(self.serial, {}, 0)
+        self.assertEqual(self.store.get(self.serial)["schedule_editor"]["day"], "MO")
 
     def test_stale_command_revision_rejected(self):
         self.store.report(self.raw)
@@ -261,13 +261,11 @@ class HTTPTests(unittest.TestCase):
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
         self.store = Store(Path(self.temp.name) / "state.json")
-        self.config = Config(http_host="127.0.0.1", http_port=0, editor_password="test-password",
-                             status_path="/captured-status", status_method="POST",
-                             frame_ancestors="'self' https://ha.example.net")
+        self.config = Config(http_host="127.0.0.1", http_port=0,
+                             status_path="/captured-status", status_method="POST")
         self.server = create_server(self.config, self.store, FakeBridge())
         self.thread = threading.Thread(target=self.server.serve_forever)
         self.thread.start()
-        self.auth = {"Authorization": "Basic " + base64.b64encode(b"admin:test-password").decode()}
         self.serial = captured()["sn"]
 
     def tearDown(self):
@@ -299,24 +297,19 @@ class HTTPTests(unittest.TestCase):
         self.assertTrue(body.startswith(b"NewData:"))
         self.assertEqual(int(headers["Content-Length"]), len(body))
 
-    def test_auth_csrf_and_no_permissive_cors(self):
-        self.assertEqual(self.request("GET", "/")[0], 401)
-        status, body, headers = self.request("GET", "/", headers=self.auth)
-        self.assertEqual(status, 200)
-        self.assertIn(b"Stored temperature timetable", body)
-        self.assertIn("frame-ancestors 'self' https://ha.example.net", headers["Content-Security-Policy"])
-        self.assertNotIn("Access-Control-Allow-Origin", headers)
-        self.report()
-        self.assertEqual(self.request("POST", f"/api/boilers/{self.serial}/cancel", "{}", self.auth)[0], 403)
+    def test_web_editor_and_management_routes_are_removed(self):
+        for path in ("/", "/static/editor.js", "/static/editor.css", "/api/boilers"):
+            status, body, headers = self.request("GET", path)
+            self.assertEqual(status, 404)
+            self.assertIn("frame-ancestors 'none'", headers["Content-Security-Policy"])
+            self.assertNotIn("Access-Control-Allow-Origin", headers)
 
-    def test_authenticated_api_queues_settings(self):
+    def test_http_cannot_configure_settings(self):
         self.report()
-        revision = self.store.get(self.serial)["revision"]
-        status, body, _ = self.request("POST", f"/api/boilers/{self.serial}/settings",
-                                       json.dumps({"settings": {"MOD": "Off"}, "revision": revision}),
-                                       {**self.auth, "Content-Type": "application/json", "X-Tenko-Request": "1"})
-        self.assertEqual(status, 200, body)
-        self.assertEqual(json.loads(body)["command_state"], "pending")
+        status, _, _ = self.request("POST", f"/api/boilers/{self.serial}/settings",
+                                    '{"settings":{"MOD":"Off"}}', {"Content-Type": "application/json"})
+        self.assertEqual(status, 404)
+        self.assertEqual(self.store.get(self.serial)["pending"], {})
 
     def test_status_uses_only_configured_path(self):
         status, body, _ = self.request("POST", "/captured-status", f"sn={self.serial}&status=0",
@@ -344,7 +337,7 @@ class MQTTTests(unittest.TestCase):
         self.raw = captured()
         self.serial = self.raw["sn"]
         self.record, _ = self.store.report(self.raw)
-        self.config = Config(editor_password="test", editor_url="https://tenko.example.net")
+        self.config = Config()
         self.bridge = Bridge(self.config, self.store)
         self.messages = []
         self.bridge.publish = lambda topic, payload: self.messages.append((topic, payload))
@@ -362,8 +355,13 @@ class MQTTTests(unittest.TestCase):
             identifiers.append(payload["unique_id"])
             self.assertEqual(payload["device"]["name"], "Tenko Boiler")
             self.assertEqual(payload["device"]["identifiers"], [f"tenko_{self.serial}"])
-            if entity.setting:
+            if entity.setting or entity.action:
                 self.assertTrue(payload["command_topic"].endswith(f"/command/{entity.key}"))
+            self.assertNotIn("configuration_url", payload["device"])
+            if entity.kind == "button":
+                self.assertEqual(payload["payload_press"], "PRESS")
+                self.assertNotIn("state_topic", payload)
+                self.assertNotIn("optimistic", payload)
             if entity.unit == "kWh":
                 self.assertNotIn("state_class", payload)
                 self.assertNotIn("device_class", payload)
@@ -420,10 +418,41 @@ class MQTTTests(unittest.TestCase):
         self.assertEqual(payload["command_state"], "error")
         self.assertIn("NOT accepted", payload["command_error"])
 
+    def test_native_editor_mqtt_workflow(self):
+        def send(key, value):
+            self.bridge.on_message(None, None, SimpleNamespace(
+                topic=f"tenko/{self.serial}/command/{key}", payload=value.encode(), retain=False))
+        send("editor_day", "Monday")
+        send("editor_slot", "1")
+        send("editor_hour", "1")
+        record = self.store.get(self.serial)
+        self.assertEqual(state(record)["editor_hour"], 1)
+        self.assertEqual(state(record)["editor_reported_hour"], 2)
+        self.assertEqual(state(record)["editor_layer"], "draft")
+        self.assertEqual(record["pending"], {})
+        send("editor_apply_day", "PRESS")
+        self.assertEqual(state(self.store.get(self.serial))["editor_layer"], "pending")
+        self.assertIn((f"tenko/{self.serial}/schedule_editor", details(self.store.get(self.serial))), self.messages)
+        send("cancel_pending", "PRESS")
+        self.assertEqual(self.store.get(self.serial)["pending"], {})
+
+    def test_retained_native_button_is_not_replayed(self):
+        self.store.command(self.serial, {"MOD": "Off"})
+        self.bridge.on_message(None, None, SimpleNamespace(
+            topic=f"tenko/{self.serial}/command/cancel_pending", payload=b"PRESS", retain=True))
+        self.assertEqual(self.store.get(self.serial)["pending"], {"MOD": "Off"})
+
+    def test_native_button_requires_press_payload(self):
+        self.store.command(self.serial, {"MOD": "Off"})
+        self.bridge.on_message(None, None, SimpleNamespace(
+            topic=f"tenko/{self.serial}/command/cancel_pending", payload=b"Off", retain=False))
+        self.assertEqual(self.store.get(self.serial)["pending"], {"MOD": "Off"})
+        self.assertEqual(self.store.get(self.serial)["command_state"], "error")
+
 
 class ConfigTests(unittest.TestCase):
     def test_env_password_ports_and_status(self):
-        with patch.dict("os.environ", {"EDITOR_PASSWORD": "test", "HTTP_PORT": "9090",
+        with patch.dict("os.environ", {"HTTP_PORT": "9090",
                                        "MQTT_PASSWORD": "broker-pass", "ALLOWED_SERIALS": "a,b"}, clear=True):
             config = Config.from_env()
             self.assertEqual(config.http_port, 9090)
@@ -432,12 +461,153 @@ class ConfigTests(unittest.TestCase):
             self.assertEqual(config.status_path, "")
 
     def test_invalid_config_fails_at_startup(self):
-        for values in ({}, {"EDITOR_PASSWORD": "test", "STATUS_PATH": "/status"},
-                       {"EDITOR_PASSWORD": "test", "FRAME_ANCESTORS": "*"},
-                       {"EDITOR_PASSWORD": "test", "MQTT_TLS": "maybe"}):
+        for values in ({"HTTP_PORT": "0"}, {"STATUS_PATH": "/status"},
+                       {"MQTT_PREFIX": "invalid/#"}, {"MQTT_TLS": "maybe"}):
             with self.subTest(values=values), patch.dict("os.environ", values, clear=True):
                 with self.assertRaises(ValueError):
                     Config.from_env()
+
+    def test_no_web_credentials_required(self):
+        with patch.dict("os.environ", {}, clear=True):
+            self.assertEqual(Config.from_env(), Config())
+
+
+class NativeEditorTests(unittest.TestCase):
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory()
+        self.path = Path(self.temp.name) / "state.json"
+        self.store = Store(self.path)
+        self.raw = captured()
+        self.serial = self.raw["sn"]
+        self.store.report(self.raw)
+
+    def tearDown(self):
+        self.store.close()
+        self.temp.cleanup()
+
+    def edit(self, action, payload="PRESS"):
+        return self.store.editor_command(self.serial, action, payload)
+
+    def select_monday(self):
+        self.edit("editor_day", "Monday")
+
+    def test_all_ten_slots_are_editable_and_validate_only_on_apply(self):
+        self.select_monday()
+        for slot in range(1, 11):
+            self.edit("editor_slot", str(slot))
+            self.edit("editor_hour", str(slot - 1))
+            self.edit("editor_target", "0" if slot % 2 else "20.1")
+        record = self.edit("editor_apply_day")
+        expected = [[slot - 1, 0 if slot % 2 else 20.1] for slot in range(1, 11)]
+        self.assertEqual(record["pending"]["MO"], expected)
+        self.assertEqual(record["report"]["settings"]["MO"][0][0], 2)
+        _, response = self.store.report(self.raw)
+        self.assertIn(";MO=00,00.0/01,20.1/", response)
+
+    def test_received_duplicates_are_not_silently_fixed(self):
+        self.assertEqual(state(self.store.get(self.serial))["editor_validation"], "invalid")
+        record = self.edit("editor_target", "20")
+        self.assertEqual([p[0] for p in record["draft"]["ED"][:3]], [0, 0, 0])
+        with self.assertRaisesRegex(ValueError, "increasing"):
+            self.edit("editor_apply_day")
+        self.assertEqual(self.store.get(self.serial)["pending"], {})
+
+    def test_confirmation_clears_only_the_matching_submitted_draft(self):
+        self.select_monday()
+        self.edit("editor_hour", "1")
+        self.edit("editor_apply_day")
+        self.store.report(self.raw)
+        self.raw["MO"] = self.raw["MO"].replace("[02,", "[01,", 1)
+        record, response = self.store.report(self.raw)
+        self.assertEqual(response, "nochange")
+        self.assertNotIn("MO", record["draft"])
+        self.assertEqual(state(record)["editor_layer"], "reported")
+        self.assertEqual(state(record)["editor_hour"], 1)
+
+    def test_newer_draft_survives_confirmation_of_older_pending(self):
+        self.select_monday()
+        self.edit("editor_hour", "1")
+        self.edit("editor_apply_day")
+        self.store.report(self.raw)
+        self.edit("editor_target", "22")
+        self.raw["MO"] = self.raw["MO"].replace("[02,", "[01,", 1)
+        record, _ = self.store.report(self.raw)
+        self.assertEqual(record["pending"], {})
+        self.assertEqual(record["draft"]["MO"][0], [1, 22])
+        self.assertEqual(state(record)["editor_layer"], "draft")
+
+    def test_off_switch_remembers_target_and_does_not_guess_one(self):
+        self.select_monday()
+        self.assertEqual(state(self.edit("editor_off", "On"))["editor_target"], 0)
+        self.assertEqual(state(self.edit("editor_off", "Off"))["editor_target"], 39)
+        self.edit("editor_day", "Every day")
+        self.edit("editor_slot", "5")
+        with self.assertRaisesRegex(ValueError, "explicitly"):
+            self.edit("editor_off", "Off")
+
+    def test_copy_and_apply_all_are_atomic(self):
+        self.select_monday()
+        self.edit("editor_copy_to", "Tuesday")
+        self.edit("editor_copy_day")
+        self.edit("editor_copy_week")
+        record = self.edit("editor_apply_all")
+        self.assertEqual(set(record["pending"]), set(SCHEDULES[1:]))
+        for key in SCHEDULES[1:]:
+            self.assertEqual(record["pending"][key], record["report"]["settings"]["MO"])
+        self.assertEqual(record["report"]["settings"]["USE"], "GraphD")
+
+    def test_invalid_day_blocks_entire_multi_day_apply(self):
+        self.edit("editor_target", "20")
+        self.select_monday()
+        self.edit("editor_hour", "1")
+        with self.assertRaises(ValueError):
+            self.edit("editor_apply_all")
+        self.assertEqual(self.store.get(self.serial)["pending"], {})
+
+    def test_discard_draft_does_not_recall_pending_upload(self):
+        self.select_monday()
+        self.edit("editor_hour", "1")
+        self.edit("editor_apply_day")
+        record = self.edit("editor_discard_day")
+        self.assertNotIn("MO", record["draft"])
+        self.assertIn("MO", record["pending"])
+        self.assertEqual(state(record)["editor_layer"], "pending")
+        self.assertEqual(state(self.edit("cancel_pending"))["editor_layer"], "reported")
+
+    def test_all_drafts_can_be_discarded(self):
+        self.select_monday()
+        self.edit("editor_copy_week")
+        self.assertEqual(self.edit("editor_discard_all")["draft"], {})
+
+    def test_invalid_individual_edits_leave_existing_draft_unchanged(self):
+        for action, payload in (("editor_hour", "2.5"), ("editor_hour", "24"),
+                                ("editor_target", "6"), ("editor_target", "nan"),
+                                ("editor_slot", "11"), ("editor_day", "Unknown"),
+                                ("editor_off", "yes")):
+            before = self.store.get(self.serial)
+            with self.subTest(action=action, payload=payload), self.assertRaises(ValueError):
+                self.edit(action, payload)
+            self.assertEqual(self.store.get(self.serial), before)
+
+    def test_legacy_json_migration_preserves_pending_and_draft(self):
+        self.select_monday()
+        self.edit("editor_hour", "1")
+        record = self.edit("editor_apply_day")
+        self.store.close()
+        data = json.loads(self.path.read_text())
+        del data[self.serial]["schedule_editor"]
+        self.path.write_text(json.dumps(data))
+        self.store = Store(self.path)
+        migrated = self.store.get(self.serial)
+        self.assertEqual(migrated["pending"], record["pending"])
+        self.assertEqual(migrated["draft"], record["draft"])
+        self.assertEqual(migrated["schedule_editor"]["day"], "ED")
+
+    def test_native_resolution_of_stage_duplicate_conflict(self):
+        self.store.report({**self.raw, "STU": "[On,Off]"})
+        self.edit("stage_resolution_source", "STU")
+        record = self.edit("resolve_stages")
+        self.assertEqual(record["pending"]["STU"], ["On", "Off"])
 
 
 if __name__ == "__main__":

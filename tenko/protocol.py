@@ -137,17 +137,6 @@ def validate_setting(key, value):
     return [flag(v) for v in value]
 
 
-def schedule_warnings(settings):
-    warnings = []
-    for key in SCHEDULES:
-        if key in settings:
-            try:
-                validate_setting(key, settings[key])
-            except ValueError as exc:
-                warnings.append(str(exc))
-    return warnings
-
-
 def serialize(settings):
     missing = set(ORDER) - settings.keys()
     if missing:

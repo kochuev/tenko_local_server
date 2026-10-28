@@ -1,17 +1,11 @@
-import base64
-import binascii
-import hmac
 import json
 import logging
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
-from pathlib import Path
 from urllib.parse import urlsplit
 
 from .protocol import SERIAL, form
-from .store import public_record
 
 LOG = logging.getLogger(__name__)
-STATIC = Path(__file__).parent / "static"
 
 
 def create_server(config, store, bridge):
@@ -25,7 +19,7 @@ def create_server(config, store, bridge):
             super().setup()
             self.connection.settimeout(15)
 
-        def reply(self, status, body, content_type="application/json; charset=utf-8", headers=None):
+        def reply(self, status, body, content_type="application/json; charset=utf-8"):
             if not isinstance(body, (str, bytes)):
                 body = json.dumps(body, allow_nan=False)
             data = body.encode() if isinstance(body, str) else body
@@ -35,31 +29,11 @@ def create_server(config, store, bridge):
             self.send_header("Cache-Control", "no-store")
             self.send_header("X-Content-Type-Options", "nosniff")
             self.send_header("Referrer-Policy", "no-referrer")
-            self.send_header("Content-Security-Policy",
-                             "default-src 'self'; script-src 'self'; style-src 'self'; "
-                             "object-src 'none'; base-uri 'none'; form-action 'self'; "
-                             f"frame-ancestors {config.frame_ancestors}")
+            self.send_header("Content-Security-Policy", "default-src 'none'; frame-ancestors 'none'")
             self.send_header("Connection", "close")
-            for key, value in (headers or {}).items():
-                self.send_header(key, value)
             self.end_headers()
             self.wfile.write(data)
             self.close_connection = True
-
-        def authorized(self):
-            try:
-                scheme, encoded = self.headers.get("Authorization", "").split(" ", 1)
-                if scheme.lower() != "basic":
-                    raise ValueError("Basic authentication required")
-                supplied = base64.b64decode(encoded, validate=True)
-            except (ValueError, binascii.Error):
-                supplied = b""
-            expected = f"{config.editor_username}:{config.editor_password}".encode()
-            if not hmac.compare_digest(supplied, expected):
-                self.reply(401, {"error": "Editor authentication required"},
-                           headers={"WWW-Authenticate": 'Basic realm="Tenko editor", charset="UTF-8"'})
-                return False
-            return True
 
         def body(self):
             if self.headers.get("Transfer-Encoding"):
@@ -107,50 +81,6 @@ def create_server(config, store, bridge):
                 if path == "/health" and self.command == "GET":
                     self.reply(200, {"http": "ok", "mqtt_connected": bridge.connected})
                     return
-                if not self.authorized():
-                    return
-                if self.command == "GET":
-                    if path in {"/", "/static/editor.js", "/static/editor.css"}:
-                        name, mime = {
-                            "/": ("index.html", "text/html; charset=utf-8"),
-                            "/static/editor.js": ("editor.js", "text/javascript; charset=utf-8"),
-                            "/static/editor.css": ("editor.css", "text/css; charset=utf-8"),
-                        }[path]
-                        self.reply(200, (STATIC / name).read_bytes(), mime)
-                        return
-                    if path == "/api/boilers":
-                        self.reply(200, [{"serial": r["serial"], "last_report": r["last_report"]}
-                                         for r in store.all()])
-                        return
-                parts = path.strip("/").split("/")
-                if len(parts) in (3, 4) and parts[:2] == ["api", "boilers"]:
-                    serial = parts[2]
-                    self.serial_allowed(serial)
-                    if len(parts) == 3 and self.command == "GET":
-                        self.reply(200, public_record(store.get(serial), config.freshness_timeout))
-                        return
-                    if len(parts) == 4 and self.command in {"POST", "PUT"}:
-                        if self.headers.get("X-Tenko-Request") != "1":
-                            raise PermissionError("Missing X-Tenko-Request: 1 (CSRF protection)")
-                        if self.headers.get_content_type() != "application/json":
-                            raise ValueError("Expected application/json")
-                        data = json.loads(self.body())
-                        if not isinstance(data, dict):
-                            raise ValueError("Expected JSON object")
-                        if parts[3] == "settings" and self.command == "POST":
-                            if not isinstance(data.get("revision"), int):
-                                raise ValueError("Current report revision is required")
-                            record = store.command(serial, data.get("settings"), data["revision"])
-                        elif parts[3] == "draft" and self.command == "PUT":
-                            record = store.draft(serial, data.get("draft"), data.get("revision"))
-                        elif parts[3] == "cancel" and self.command == "POST":
-                            record = store.cancel(serial)
-                        else:
-                            self.reply(404, {"error": "Unknown API action"})
-                            return
-                        bridge.emit(serial)
-                        self.reply(200, public_record(record, config.freshness_timeout))
-                        return
                 self.reply(404, {"error": "Unknown path or method"})
             except PermissionError as exc:
                 self.reply(403, {"error": str(exc)})

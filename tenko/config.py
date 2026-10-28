@@ -1,6 +1,5 @@
 import os
 from dataclasses import dataclass
-from urllib.parse import urlparse
 
 
 @dataclass(frozen=True)
@@ -19,10 +18,6 @@ class Config:
     freshness_timeout: int = 180
     confirmation_timeout: int = 600
     state_path: str = "data/state.json"
-    editor_username: str = "admin"
-    editor_password: str = ""
-    editor_url: str = "http://localhost:9080"
-    frame_ancestors: str = "'self'"
     status_path: str = ""
     status_method: str = ""
     no_change_body: str = "nochange"
@@ -48,8 +43,6 @@ class Config:
             else:
                 values[key] = text
         result = cls(**values)
-        if not result.editor_password:
-            raise ValueError("Set EDITOR_PASSWORD; unauthenticated controls are not supported")
         for port in (result.http_port, result.mqtt_port):
             if not 1 <= port <= 65535:
                 raise ValueError("Ports must be between 1 and 65535")
@@ -69,15 +62,4 @@ class Config:
         for prefix in (result.mqtt_prefix, result.discovery_prefix):
             if not prefix or any(c in prefix for c in "+#\x00") or prefix.endswith("/"):
                 raise ValueError("MQTT prefixes must be nonempty and contain no wildcards")
-        url = urlparse(result.editor_url)
-        if (url.scheme not in {"http", "https"} or not url.netloc
-                or url.path not in {"", "/"} or url.query or url.fragment):
-            raise ValueError("EDITOR_URL must be an absolute HTTP(S) root URL without query/fragment")
-        for ancestor in result.frame_ancestors.split():
-            if ancestor not in {"'self'", "'none'"}:
-                parsed = urlparse(ancestor)
-                if parsed.scheme not in {"http", "https"} or not parsed.netloc or parsed.path:
-                    raise ValueError("FRAME_ANCESTORS must contain 'self', 'none', or origins")
-        if not result.frame_ancestors or any(c in result.frame_ancestors for c in ";\r\n"):
-            raise ValueError("Invalid FRAME_ANCESTORS")
         return result

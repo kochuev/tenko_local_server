@@ -8,7 +8,8 @@ import threading
 import time
 from pathlib import Path
 
-from .protocol import ORDER, parse_report, schedule_warnings, serialize, validate_setting
+from .protocol import parse_report, serialize, validate_setting
+from .schedule_editor import edit, new_editor
 
 LOG = logging.getLogger(__name__)
 
@@ -27,6 +28,7 @@ class Store:
             for serial, record in self.records.items():
                 if not isinstance(record, dict) or record.get("serial") != serial:
                     raise ValueError("Invalid boiler record in state file")
+                record.setdefault("schedule_editor", new_editor())
                 if set(self._new(serial)) - record.keys():
                     raise ValueError(f"Incomplete persisted record for {serial}")
         except Exception:
@@ -64,7 +66,7 @@ class Store:
         return {"serial": serial, "report": {}, "last_report": None, "status": None,
                 "last_status": None, "pending": {}, "sent_at": None, "queued_at": None,
                 "attempts": 0, "command_state": "idle", "command_error": None,
-                "draft": {}, "draft_revision": 0, "revision": 0}
+                "draft": {}, "draft_revision": 0, "revision": 0, "schedule_editor": new_editor()}
 
     def get(self, serial):
         with self.lock:
@@ -92,6 +94,11 @@ class Store:
                 return record, "nochange"
             if record["pending"] and record["sent_at"] is not None:
                 if all(report["settings"].get(k) == v for k, v in record["pending"].items()):
+                    confirmed = [k for k, v in record["pending"].items() if record["draft"].get(k) == v]
+                    for key in confirmed:
+                        del record["draft"][key]
+                    if confirmed:
+                        record["draft_revision"] += 1
                     record.update(pending={}, command_state="applied", command_error=None,
                                   sent_at=None, queued_at=None)
             response = "nochange"
@@ -155,23 +162,23 @@ class Store:
                 updated[index] = value
             return self.command(serial, {key: updated})
 
+    def editor_command(self, serial, action, payload):
+        with self.lock:
+            if action == "cancel_pending":
+                return self.cancel(serial)
+            record = self._read(serial)
+            patch = edit(record, action, payload)
+            if patch:
+                return self.command(serial, patch)
+            self._write(record)
+            return record
+
     def command_error(self, serial, message):
         with self.lock:
             record = self._read(serial)
             record.update(command_error=message, command_state="error")
             self._write(record)
             LOG.warning("%s: command rejected: %s", serial, message)
-            return record
-
-    def draft(self, serial, patch, revision):
-        if not isinstance(patch, dict) or set(patch) - set(ORDER):
-            raise ValueError("Draft must contain supported settings only")
-        with self.lock:
-            record = self._read(serial)
-            if record["draft_revision"] != revision:
-                raise ValueError("Draft changed in another editor; reload before saving")
-            record.update(draft=patch, draft_revision=revision + 1)
-            self._write(record)
             return record
 
     def cancel(self, serial):
@@ -196,12 +203,3 @@ class Store:
                     self._write(record)
                     changed.append(serial)
             return changed
-
-
-def public_record(record, freshness):
-    result = copy.deepcopy(record)
-    result["online"] = bool(record["last_report"] and time.time() - record["last_report"] < freshness)
-    result["schedule_warnings"] = schedule_warnings(record.get("report", {}).get("settings", {}))
-    if record["pending"] and record["queued_at"] and time.time() - record["queued_at"] > freshness:
-        result["waiting_note"] = "Awaiting boiler confirmation; inspect last report and command status"
-    return result

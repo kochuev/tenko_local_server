@@ -7,6 +7,7 @@ import paho.mqtt.client as mqtt
 
 from .entities import BY_KEY, ENTITIES, discovery, state
 from .protocol import SCHEDULES, SERIAL
+from .schedule_editor import details
 
 LOG = logging.getLogger(__name__)
 
@@ -104,9 +105,14 @@ class Bridge:
                 self.store.command(serial, json.loads(payload))
             else:
                 entity = BY_KEY.get(key)
-                if not entity or not entity.setting:
+                if not entity or not (entity.setting or entity.action):
                     raise ValueError(f"Unknown control: {key}")
-                self.store.component_command(serial, entity.setting, entity.index, payload)
+                if entity.action:
+                    if entity.kind == "button" and payload != "PRESS":
+                        raise ValueError("Button payload must be PRESS")
+                    self.store.editor_command(serial, entity.action, payload)
+                else:
+                    self.store.component_command(serial, entity.setting, entity.index, payload)
         except (ValueError, KeyError, UnicodeError) as exc:
             LOG.warning("Rejected MQTT command %s: %s", message.topic, exc)
             try:
@@ -151,6 +157,7 @@ class Bridge:
                 "raw": report.get("raw", {}), "decoded": report.get("decoded", {}),
                 "parse_errors": report.get("parse_errors", []), "stage_conflict": report.get("stage_conflict"),
                 "pending": record["pending"], "reported": report.get("settings", {}),
+                "draft": record["draft"],
                 "command_error": record["command_error"], "attempts": record["attempts"],
                 "separate_raw_status": record["status"],
                 "status_interpretation": "ASSUMED: 0=off, 1=on; other codes unknown",
@@ -158,6 +165,7 @@ class Bridge:
                 "energy_units": "presumed kWh; scaling/reset/month ordering unverified",
                 "monthly_values": report.get("decoded", {}).get("YSt"),
             })
+            self.publish(f"{base}/schedule_editor", details(record))
             for key in SCHEDULES:
                 self.publish(f"{base}/schedules/{key}", {
                     "points": report.get("settings", {}).get(key),

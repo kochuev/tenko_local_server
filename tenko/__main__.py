@@ -20,7 +20,7 @@ def main():
     bridge.start()
     worker = threading.Thread(target=server.serve_forever, name="http-server")
     worker.start()
-    logging.info("HTTP listening on %s:%s; editor requires authentication", config.http_host, config.http_port)
+    logging.info("Boiler HTTP listening on %s:%s; configuration uses MQTT", config.http_host, config.http_port)
     try:
         stopped.wait()
     finally:
