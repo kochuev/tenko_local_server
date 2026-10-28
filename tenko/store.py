@@ -142,15 +142,19 @@ class Store:
             record = self._read(serial)
             if revision is not None and revision != record["revision"]:
                 raise ValueError("Report/command changed; reload before applying")
-            if not record["report"] or record["report"]["parse_errors"]:
-                raise ValueError("A valid parameter report is required before setting controls")
-            candidate = {**record["report"]["settings"], **record["pending"], **normalized}
-            serialize(candidate)
-            record.update(pending={**record["pending"], **normalized}, sent_at=None,
-                          queued_at=time.time(), attempts=0, command_state="pending", command_error=None)
-            record["revision"] += 1
-            self._write(record)
-            return record
+            return self._queue(record, normalized)
+
+    def _queue(self, record, patch):
+        """Queue a validated patch, preserving unchanged reported components."""
+        if not record["report"] or record["report"]["parse_errors"]:
+            raise ValueError("A valid parameter report is required before setting controls")
+        candidate = {**record["report"]["settings"], **record["pending"], **patch}
+        serialize(candidate)
+        record.update(pending={**record["pending"], **patch}, sent_at=None,
+                      queued_at=time.time(), attempts=0, command_state="pending", command_error=None)
+        record["revision"] += 1
+        self._write(record)
+        return record
 
     def component_command(self, serial, key, index, value):
         with self.lock:
@@ -170,7 +174,7 @@ class Store:
             record = self._read(serial)
             patch = edit(record, action, payload)
             if patch:
-                return self.command(serial, patch)
+                return self._queue(record, patch)
             self._write(record)
             return record
 

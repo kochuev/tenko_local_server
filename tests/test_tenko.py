@@ -175,14 +175,15 @@ class StoreTests(unittest.TestCase):
         self.store.report(self.raw)
         self.assertEqual(self.store.get(self.serial)["pending"], {"PMT": ["On", 14, 16]})
 
-    def test_draft_persists_and_report_does_not_replace_it(self):
+    def test_schedule_change_queues_immediately_and_survives_reports_and_restart(self):
         record = self.store.editor_command(self.serial, "schedule_MO_01_hour", "1")
-        draft = record["draft"]
+        pending = record["pending"]
+        self.assertEqual(record["draft"], {})
         self.store.report(self.raw)
         self.store.close()
         self.store = Store(self.path)
-        self.assertEqual(self.store.get(self.serial)["draft"], draft)
-        self.assertEqual(state(self.store.get(self.serial))["schedule_MO_01_hour"], 1)
+        self.assertEqual(self.store.get(self.serial)["pending"], pending)
+        self.assertEqual(state(self.store.get(self.serial))["schedule_MO_01_hour"], "1")
 
     def test_stale_command_revision_rejected(self):
         self.store.report(self.raw)
@@ -233,10 +234,10 @@ class StoreTests(unittest.TestCase):
 
     def test_separate_status_never_overwrites_modulation(self):
         record = self.store.status({"sn": self.serial, "status": "1"})
-        self.assertEqual(state(record)["status_heating"], "On")
+        self.assertNotIn("status_heating", state(record))
         self.assertEqual(state(record)["heating_on"], "Off")
         record = self.store.status({"sn": self.serial, "status": "9"})
-        self.assertIsNone(state(record)["status_heating"])
+        self.assertNotIn("status_heating", state(record))
         self.assertEqual(record["status"], "9")
 
     def test_duplicate_flags_require_explicit_resolution(self):
@@ -337,11 +338,23 @@ class HTTPTests(unittest.TestCase):
         self.assertEqual(status, 200)
         self.assertIn("HTTP IN", dump)
         self.assertIn(urlencode(captured()), dump)
-        self.assertIn("HTTP OUT", dump)
-        self.assertIn(body.decode(), dump)
+        exchanges = [line for line in logs.output if "HTTP EXCHANGE" in line]
+        self.assertEqual(len(exchanges), 1)
+        self.assertIn("method=POST", exchanges[0])
+        self.assertIn(f"request_body={urlencode(captured()).encode()!r}", exchanges[0])
+        self.assertIn(f"response_body={body!r}", exchanges[0])
         with self.assertLogs("tenko.server", level="INFO") as logs:
             self.report()
         self.assertNotIn("body=", "\n".join(logs.output))
+
+    def test_status_debug_pairs_request_and_response(self):
+        with self.assertLogs("tenko.server", level="DEBUG") as logs:
+            status, _, _ = self.request("POST", "/update/status", f"sn={self.serial}&status=1",
+                                        {"Content-Type": "application/x-www-form-urlencoded"})
+        self.assertEqual(status, 200)
+        exchange = next(line for line in logs.output if "HTTP EXCHANGE" in line)
+        self.assertIn(f"request_body=b'sn={self.serial}&status=1'", exchange)
+        self.assertIn("response_body=b'status updated'", exchange)
 
     def test_debug_dumps_include_unknown_endpoint_body(self):
         with self.assertLogs("tenko.server", level="DEBUG") as logs:
@@ -458,27 +471,28 @@ class MQTTTests(unittest.TestCase):
                 topic=f"tenko/{self.serial}/command/{key}", payload=value.encode(), retain=False))
         send("schedule_MO_01_hour", "1")
         record = self.store.get(self.serial)
-        self.assertEqual(state(record)["schedule_MO_01_hour"], 1)
+        self.assertEqual(state(record)["schedule_MO_01_hour"], "1")
         self.assertEqual(record["report"]["settings"]["MO"][0][0], 2)
-        self.assertEqual(state(record)["schedule_MO_layer"], "draft")
-        self.assertEqual(record["pending"], {})
-        send("schedule_MO_apply", "PRESS")
-        self.assertEqual(state(self.store.get(self.serial))["schedule_MO_layer"], "pending")
+        self.assertEqual(state(record)["schedule_MO_layer"], "pending")
+        self.assertEqual(record["pending"]["MO"][0][0], 1)
         self.assertIn((f"tenko/{self.serial}/schedules/MO", details(self.store.get(self.serial), "MO")), self.messages)
+        send("schedule_MO_01_hour", "3")
+        record = self.store.get(self.serial)
+        self.assertIn("neighboring", record["command_error"])
+        self.assertEqual(state(record)["schedule_MO_01_hour"], "1")
         send("cancel_pending", "PRESS")
         self.assertIn("MO", self.store.get(self.serial)["pending"])
         self.assertIn("Unknown control", self.store.get(self.serial)["command_error"])
 
-    def test_retained_native_button_is_not_replayed(self):
-        self.store.editor_command(self.serial, "schedule_MO_01_hour", "1")
+    def test_retained_schedule_change_is_not_replayed(self):
         self.bridge.on_message(None, None, SimpleNamespace(
-            topic=f"tenko/{self.serial}/command/schedule_MO_apply", payload=b"PRESS", retain=True))
+            topic=f"tenko/{self.serial}/command/schedule_MO_01_hour", payload=b"1", retain=True))
         self.assertEqual(self.store.get(self.serial)["pending"], {})
 
     def test_native_button_requires_press_payload(self):
         self.store.command(self.serial, {"MOD": "Off"})
         self.bridge.on_message(None, None, SimpleNamespace(
-            topic=f"tenko/{self.serial}/command/editor_apply_all", payload=b"Off", retain=False))
+            topic=f"tenko/{self.serial}/command/resolve_stages", payload=b"Off", retain=False))
         self.assertEqual(self.store.get(self.serial)["pending"], {"MOD": "Off"})
         self.assertEqual(self.store.get(self.serial)["command_state"], "error")
 
@@ -511,6 +525,21 @@ class MQTTTests(unittest.TestCase):
                 bridge.publish("tenko/test", {"value": 21})
         self.assertIn("MQTT OUT", "\n".join(logs.output))
         self.assertIn('{"value":21}', "\n".join(logs.output))
+
+    def test_heating_states_use_plain_on_off_without_heat_device_class(self):
+        self.store.report({**self.raw, "TEN1": "On", "TEN2": "Off", "MOD": "On,On,1,3"})
+        values = state(self.store.get(self.serial))
+        for key, expected in (("ten_1_on", "On"), ("ten_2_on", "Off"), ("heating_on", "On")):
+            with self.subTest(key=key):
+                payload = discovery(BY_KEY[key], self.serial, None, self.config)
+                self.assertNotIn("device_class", payload)
+                self.assertEqual(payload["payload_on"], "On")
+                self.assertEqual(payload["payload_off"], "Off")
+                self.assertEqual(values[key], expected)
+        for key in ("ten_1", "ten_2", "ten_1_on", "ten_2_on"):
+            self.assertIn("Heating element", BY_KEY[key].name)
+        self.assertNotIn("status_heating", BY_KEY)
+        self.assertIn(("binary_sensor", "status_heating"), REMOVED_ENTITIES)
 
 
 class ConfigTests(unittest.TestCase):
@@ -559,9 +588,26 @@ class DashboardTests(unittest.TestCase):
                 with self.subTest(entity=entity.key):
                     payload = discovery(entity, "211229_005", "8.2w1.2", Config())
                     self.assertNotIn("json_attributes_topic", payload)
-                    if entity.key in POINT_CONTROLS:
+                    if entity.kind == "number":
                         self.assertEqual(payload["mode"], "box")
         self.assertNotIn("cancel_pending", BY_KEY)
+
+    def test_hours_are_dropdowns_and_removed_controls_are_cleaned_up(self):
+        for key, (_, _, component) in POINT_CONTROLS.items():
+            with self.subTest(key=key):
+                entity = BY_KEY[key]
+                payload = discovery(entity, "211229_005", "8.2w1.2", Config())
+                if component == 0:
+                    self.assertEqual(entity.kind, "select")
+                    self.assertEqual(payload["options"], [str(hour) for hour in range(24)])
+                    self.assertIn(("number", key), REMOVED_ENTITIES)
+                else:
+                    self.assertEqual(entity.kind, "number")
+        dashboard = (ROOT / "examples/home-assistant.yaml").read_text()
+        self.assertNotIn("draft", dashboard)
+        for key in ("editor_apply_all", "editor_discard_all", "schedule_MO_apply", "schedule_MO_discard"):
+            self.assertNotIn(key, BY_KEY)
+            self.assertIn(("button", key), REMOVED_ENTITIES)
 
 
 class NativeEditorTests(unittest.TestCase):
@@ -580,88 +626,110 @@ class NativeEditorTests(unittest.TestCase):
     def edit(self, action, payload="PRESS"):
         return self.store.editor_command(self.serial, action, payload)
 
-    def test_all_80_points_have_individual_controls_and_validate_on_apply(self):
+    def test_all_80_points_queue_each_change_without_drafts_or_apply(self):
         self.assertEqual(len(POINT_CONTROLS), 160)
         self.assertTrue(set(POINT_CONTROLS) <= BY_KEY.keys())
         for day in SCHEDULES:
+            self.raw[day] = "[" + ",".join(f"[{slot * 2:02d},20.0]" for slot in range(10)) + "];"
+        self.store.report(self.raw)
+        for day in SCHEDULES:
             for slot in range(1, 11):
-                self.edit(f"schedule_{day}_{slot:02d}_hour", str(slot - 1))
-                self.edit(f"schedule_{day}_{slot:02d}_target", "0" if slot % 2 else "20.1")
-        record = self.edit("editor_apply_all")
-        expected = [[slot - 1, 0 if slot % 2 else 20.1] for slot in range(1, 11)]
+                record = self.edit(f"schedule_{day}_{slot:02d}_hour", str(slot * 2 - 1))
+                self.assertEqual(record["pending"][day][slot - 1][0], slot * 2 - 1)
+                record = self.edit(f"schedule_{day}_{slot:02d}_target", "0" if slot % 2 else "20.1")
+        expected = [[slot * 2 - 1, 0 if slot % 2 else 20.1] for slot in range(1, 11)]
         self.assertEqual(set(record["pending"]), set(SCHEDULES))
         for day in SCHEDULES:
             self.assertEqual(record["pending"][day], expected)
-        self.assertEqual(record["report"]["settings"]["MO"][0][0], 2)
+        self.assertEqual(record["draft"], {})
+        self.assertEqual(record["report"]["settings"]["MO"][0][0], 0)
         _, response = self.store.report(self.raw)
-        self.assertIn(";MO=00,00.0/01,20.1/", response)
+        self.assertIn(";MO=01,00.0/03,20.1/", response)
 
     def test_received_duplicates_are_not_silently_fixed(self):
         self.assertEqual(state(self.store.get(self.serial))["schedule_ED_validation"], "invalid")
         record = self.edit("schedule_ED_01_target", "20")
-        self.assertEqual([p[0] for p in record["draft"]["ED"][:3]], [0, 0, 0])
-        with self.assertRaisesRegex(ValueError, "increasing"):
-            self.edit("schedule_ED_apply")
-        self.assertEqual(self.store.get(self.serial)["pending"], {})
+        self.assertEqual([p[0] for p in record["pending"]["ED"][:3]], [0, 0, 0])
+        before = self.store.get(self.serial)
+        with self.assertRaisesRegex(ValueError, "neighboring"):
+            self.edit("schedule_ED_02_hour", "1")
+        self.assertEqual(self.store.get(self.serial), before)
+        _, response = self.store.report(self.raw)
+        self.assertIn(";ED=00,20.0/00,40.0/00,40.0/", response)
 
-    def test_confirmation_clears_only_the_matching_submitted_draft(self):
+    def test_confirmation_clears_pending_without_an_apply_button(self):
         self.edit("schedule_MO_01_hour", "1")
-        self.edit("schedule_MO_apply")
         self.store.report(self.raw)
         self.raw["MO"] = self.raw["MO"].replace("[02,", "[01,", 1)
         record, response = self.store.report(self.raw)
         self.assertEqual(response, "nochange")
-        self.assertNotIn("MO", record["draft"])
+        self.assertNotIn("MO", record["pending"])
         self.assertEqual(state(record)["schedule_MO_layer"], "reported")
-        self.assertEqual(state(record)["schedule_MO_01_hour"], 1)
+        self.assertEqual(state(record)["schedule_MO_01_hour"], "1")
 
-    def test_newer_draft_survives_confirmation_of_older_pending(self):
+    def test_existing_duplicate_hours_can_be_corrected_without_a_draft(self):
+        hours = [0, 0, *range(4, 20, 2)]
+        self.raw["ED"] = "[" + ",".join(f"[{hour:02d},20.0]" for hour in hours) + "];"
+        self.store.report(self.raw)
+        record = self.edit("schedule_ED_02_hour", "2")
+        self.assertEqual([point[0] for point in record["pending"]["ED"]], list(range(0, 20, 2)))
+        self.assertEqual(state(record)["schedule_ED_validation"], "valid")
+        self.assertEqual(record["draft"], {})
+
+    def test_hour_dropdown_boundaries_zero_and_23_are_accepted(self):
+        self.raw["MO"] = "[" + ",".join(f"[{hour:02d},20.0]" for hour in range(2, 22, 2)) + "];"
+        self.store.report(self.raw)
+        self.edit("schedule_MO_01_hour", "0")
+        record = self.edit("schedule_MO_10_hour", "23")
+        self.assertEqual(state(record)["schedule_MO_01_hour"], "0")
+        self.assertEqual(state(record)["schedule_MO_10_hour"], "23")
+        self.assertEqual(record["pending"]["MO"][0][0], 0)
+        self.assertEqual(record["pending"]["MO"][9][0], 23)
+
+    def test_newer_change_is_not_lost_when_boiler_reports_an_older_upload(self):
         self.edit("schedule_MO_01_hour", "1")
-        self.edit("schedule_MO_apply")
         self.store.report(self.raw)
         self.edit("schedule_MO_01_target", "22")
         self.raw["MO"] = self.raw["MO"].replace("[02,", "[01,", 1)
-        record, _ = self.store.report(self.raw)
+        record, response = self.store.report(self.raw)
+        self.assertEqual(record["pending"]["MO"][0], [1, 22])
+        self.assertIn(";MO=01,22.0/", response)
+        self.assertEqual(state(record)["schedule_MO_layer"], "pending")
+        self.raw["MO"] = self.raw["MO"].replace("[01,39.0]", "[01,22.0]", 1)
+        record, response = self.store.report(self.raw)
         self.assertEqual(record["pending"], {})
-        self.assertEqual(record["draft"]["MO"][0], [1, 22])
-        self.assertEqual(state(record)["schedule_MO_layer"], "draft")
+        self.assertEqual(response, "nochange")
 
     def test_off_is_explicit_zero_per_point_without_affecting_other_points(self):
         self.assertEqual(state(self.edit("schedule_MO_01_target", "0"))["schedule_MO_01_target"], 0)
         record = self.edit("schedule_MO_02_target", "27")
-        self.assertEqual(record["draft"]["MO"][:2], [[2, 0], [3, 27]])
+        self.assertEqual(record["pending"]["MO"][:2], [[2, 0], [3, 27]])
 
-    def test_apply_all_is_atomic_and_does_not_change_mode(self):
+    def test_edits_merge_with_pending_days_and_do_not_change_mode(self):
         self.edit("schedule_MO_01_hour", "1")
-        self.edit("schedule_TU_01_target", "21")
-        record = self.edit("editor_apply_all")
+        record = self.edit("schedule_TU_01_target", "21")
         self.assertEqual(set(record["pending"]), {"MO", "TU"})
         self.assertEqual(record["report"]["settings"]["USE"], "GraphD")
 
-    def test_invalid_day_blocks_entire_multi_day_apply(self):
-        self.edit("schedule_ED_01_target", "20")
+    def test_conflicting_hour_is_rejected_without_changing_pending(self):
         self.edit("schedule_MO_01_hour", "1")
-        with self.assertRaises(ValueError):
-            self.edit("editor_apply_all")
-        self.assertEqual(self.store.get(self.serial)["pending"], {})
+        before = self.store.get(self.serial)
+        for key, hour in (("schedule_MO_01_hour", "3"), ("schedule_MO_02_hour", "0"),
+                          ("schedule_MO_03_hour", "3")):
+            with self.subTest(key=key), self.assertRaisesRegex(ValueError, "neighboring"):
+                self.edit(key, hour)
+            self.assertEqual(self.store.get(self.serial), before)
 
-    def test_discard_draft_does_not_recall_pending_upload(self):
+    def test_removed_apply_discard_and_cancel_commands_do_not_change_pending(self):
         self.edit("schedule_MO_01_hour", "1")
-        self.edit("schedule_MO_apply")
-        record = self.edit("schedule_MO_discard")
-        self.assertNotIn("MO", record["draft"])
-        self.assertIn("MO", record["pending"])
-        self.assertEqual(state(record)["schedule_MO_layer"], "pending")
-        with self.assertRaises(ValueError):
-            self.edit("cancel_pending")
-        self.assertIn("MO", self.store.get(self.serial)["pending"])
+        before = self.store.get(self.serial)
+        for action in ("editor_apply_all", "editor_discard_all", "schedule_MO_apply",
+                       "schedule_MO_discard", "cancel_pending"):
+            with self.subTest(action=action), self.assertRaises(ValueError):
+                self.edit(action)
+            self.assertEqual(self.store.get(self.serial), before)
 
-    def test_all_drafts_can_be_discarded(self):
-        for day in SCHEDULES:
-            self.edit(f"schedule_{day}_01_target", "20")
-        self.assertEqual(self.edit("editor_discard_all")["draft"], {})
-
-    def test_invalid_individual_edits_leave_existing_draft_unchanged(self):
+    def test_invalid_individual_edits_leave_pending_unchanged(self):
         for action, payload in (("schedule_MO_01_hour", "2.5"), ("schedule_MO_01_hour", "24"),
                                 ("schedule_MO_01_target", "6"), ("schedule_MO_01_target", "nan"),
                                 ("schedule_MO_11_hour", "1"), ("editor_day", "Monday"),
@@ -672,27 +740,39 @@ class NativeEditorTests(unittest.TestCase):
             self.assertEqual(self.store.get(self.serial), before)
 
     def test_legacy_json_migration_preserves_pending_and_draft(self):
-        self.edit("schedule_MO_01_hour", "1")
-        record = self.edit("schedule_MO_apply")
+        record = self.edit("schedule_MO_01_hour", "1")
         self.store.close()
         data = json.loads(self.path.read_text())
+        legacy_draft = copy.deepcopy(record["report"]["settings"]["MO"])
+        legacy_draft[0][1] = 22
+        data[self.serial]["draft"]["MO"] = legacy_draft
         del data[self.serial]["schedule_editor"]
         del data[self.serial]["status_report"]
         self.path.write_text(json.dumps(data))
         self.store = Store(self.path)
         migrated = self.store.get(self.serial)
         self.assertEqual(migrated["pending"], record["pending"])
-        self.assertEqual(migrated["draft"], record["draft"])
+        self.assertEqual(migrated["draft"]["MO"], legacy_draft)
+        self.assertEqual(state(migrated)["schedule_MO_01_target"], 39)
+        self.assertEqual(state(migrated)["schedule_MO_layer"], "pending")
         self.assertEqual(migrated["schedule_editor"]["stage_source"], "ST1/ST2")
         self.assertEqual(migrated["status_report"], {})
 
     def test_concurrent_point_updates_do_not_depend_on_day_selection(self):
-        with ThreadPoolExecutor(max_workers=2) as pool:
+        with ThreadPoolExecutor(max_workers=3) as pool:
             list(pool.map(lambda item: self.edit(*item),
-                          [("schedule_MO_01_hour", "1"), ("schedule_TU_01_target", "21")]))
+                          [("schedule_MO_01_hour", "1"), ("schedule_MO_01_target", "22"),
+                           ("schedule_TU_01_target", "21")]))
         record = self.store.get(self.serial)
-        self.assertEqual(record["draft"]["MO"][0][0], 1)
-        self.assertEqual(record["draft"]["TU"][0][1], 21)
+        self.assertEqual(record["pending"]["MO"][0], [1, 22])
+        self.assertEqual(record["pending"]["TU"][0][1], 21)
+
+    def test_native_point_storage_failure_keeps_previous_state(self):
+        before = self.store.get(self.serial)
+        with patch("tenko.store.os.replace", side_effect=OSError("disk failed")):
+            with self.assertRaises(OSError):
+                self.edit("schedule_MO_01_hour", "1")
+        self.assertEqual(self.store.get(self.serial), before)
 
     def test_native_resolution_of_stage_duplicate_conflict(self):
         self.store.report({**self.raw, "STU": "[On,Off]"})

@@ -25,15 +25,15 @@ def schedule_view():
         "          - type: entities", "            title: Mode and upload",
         "            entities:",
     ]
-    for key in ("schedule_mode", "editor_apply_all", "editor_discard_all", "command_state", "command_error"):
+    for key in ("schedule_mode", "command_state", "command_error"):
         lines.append(f"              - {entity_id(key)}")
     lines.extend([
         "          - type: markdown",
         "            content: >-",
         "              Each numbered line has Hour (0-23) and Target in C (0 = OFF, otherwise 7-40).",
-        "              Edit all ten points, then Apply. Whole week repeats ED every day;",
+        "              Each valid change queues immediately. Whole week repeats ED every day;",
         "              Individual days uses Monday-Sunday. Editing does not activate a mode.",
-        "              Discard only removes drafts; queued uploads continue until confirmed.",
+        "              Hours must stay in order without duplicates. Queued uploads continue until confirmed.",
     ])
     for day, name in DAY_NAMES.items():
         lines.extend([
@@ -41,8 +41,7 @@ def schedule_view():
             f"            heading: {json.dumps(name)}", "          - type: entities",
             "            show_header_toggle: false", "            entities:",
         ])
-        for key in (f"schedule_{day}_layer", f"schedule_{day}_validation",
-                    f"schedule_{day}_apply", f"schedule_{day}_discard"):
+        for key in (f"schedule_{day}_layer", f"schedule_{day}_validation"):
             lines.append(f"              - {entity_id(key)}")
         lines.extend([
             "          - type: grid", "            columns: 2", "            square: false",

@@ -2,7 +2,7 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 
 from .protocol import SCHEDULES, number
-from .schedule_editor import DAY_BUTTONS, DAY_NAMES, POINT_CONTROLS, SCHEDULE_MODES, editor_state
+from .schedule_editor import DAY_NAMES, POINT_CONTROLS, SCHEDULE_MODES, editor_state
 
 
 @dataclass(frozen=True)
@@ -34,8 +34,8 @@ ENTITIES = [
     Entity("stage_2_capacity", "Stage 2 rated capacity", unit="kW"),
 ]
 for key, name in (
-    ("pump", "Pump operating state"), ("ten_1", "TEN 1 operating state"),
-    ("ten_2", "TEN 2 operating state"), ("heating", "Modulation heating state"),
+    ("pump", "Pump operating state"), ("ten_1", "Heating element 1 operating state"),
+    ("ten_2", "Heating element 2 operating state"), ("heating", "Modulation heating state"),
     ("pmt_state", "PMT operating state"), ("frost", "AF-5 phase"),
     ("error", "Raw boiler error"), ("sensor_type", "Air sensor type"),
     ("clock", "Boiler clock (timezone unknown)"), ("weekday", "Raw weekday code"),
@@ -46,10 +46,10 @@ for key, name in (
 ):
     ENTITIES.append(Entity(key, name))
 for key, name in (
-    ("ten_1_on", "TEN 1 heating"), ("ten_2_on", "TEN 2 heating"),
-    ("heating_on", "Modulation heating"), ("status_heating", "Separate heating (assumed 0/1)"),
+    ("ten_1_on", "Heating element 1"), ("ten_2_on", "Heating element 2"),
+    ("heating_on", "Modulation heating"),
 ):
-    ENTITIES.append(Entity(key, name, kind="binary_sensor", device_class="heat", category=None))
+    ENTITIES.append(Entity(key, name, kind="binary_sensor", category=None))
 ENTITIES.extend([
     Entity("active_elements", "Active elements"),
     Entity("total_elements", "Total elements"),
@@ -91,21 +91,16 @@ ENTITIES.extend([
     Entity("stage_resolution_source", "Manual-stage conflict source", kind="select", category="config",
            action="stage_resolution_source", options=("ST1/ST2", "STU")),
 ])
-for key, name in (
-    ("editor_apply_all", "Apply all schedule drafts"),
-    ("editor_discard_all", "Discard all drafts"),
-    ("resolve_stages", "Resolve manual-stage conflict using selected source"),
-):
-    ENTITIES.append(Entity(key, name, kind="button", category="config", action=key))
+ENTITIES.append(Entity("resolve_stages", "Resolve manual-stage conflict using selected source",
+                       kind="button", category="config", action="resolve_stages"))
 for key, (day, slot, component) in POINT_CONTROLS.items():
     field = "hour" if component == 0 else "target (0=OFF)"
     ENTITIES.append(Entity(
-        key, f"{DAY_NAMES[day]} point {slot + 1:02d} {field}", kind="number", category="config",
+        key, f"{DAY_NAMES[day]} point {slot + 1:02d} {field}",
+        kind="select" if component == 0 else "number", category="config",
         action=key, minimum=0, maximum=23 if component == 0 else 40,
-        step=1 if component == 0 else .1, unit=None if component == 0 else "°C"))
-for key, (day, action) in DAY_BUTTONS.items():
-    ENTITIES.append(Entity(key, f"{action.title()} {DAY_NAMES[day]} draft",
-                           kind="button", category="config", action=key))
+        step=1 if component == 0 else .1, unit=None if component == 0 else "°C",
+        options=tuple(str(hour) for hour in range(24)) if component == 0 else ()))
 for day in SCHEDULES:
     ENTITIES.extend([
         Entity(f"schedule_{day}_layer", f"{DAY_NAMES[day]} schedule layer"),
@@ -119,7 +114,12 @@ REMOVED_ENTITIES = (
     ("button", "editor_copy_day"), ("button", "editor_copy_week"), ("button", "cancel_pending"),
     ("sensor", "editor_layer"), ("sensor", "editor_validation"), ("sensor", "editor_day_summary"),
     ("sensor", "editor_reported_hour"), ("sensor", "editor_reported_target"),
-)
+    ("button", "editor_apply_all"), ("button", "editor_discard_all"),
+    ("binary_sensor", "status_heating"),
+) + tuple(
+    ("number", key) for key, (_, _, component) in POINT_CONTROLS.items() if component == 0
+) + tuple(
+    ("button", f"schedule_{day}_{action}") for day in SCHEDULES for action in ("apply", "discard"))
 
 
 def timestamp(value):
@@ -151,7 +151,6 @@ def state(record):
         "firmware": decoded.get("VER"), "serial": record["serial"],
         "clock": ",".join(str(v) for v in decoded["TIM"]) if decoded.get("TIM") else None,
         "weekday": at("TIM", 2), "raw_status": record["status"],
-        "status_heating": {"0": "Off", "1": "On"}.get(record["status"]),
         "ten_1_on": binary(decoded.get("TEN1")), "ten_2_on": binary(decoded.get("TEN2")),
         "heating_on": binary(at("MOD", 1)), "last_report": timestamp(record["last_report"]),
         "last_status": timestamp(record["last_status"]), "command_state": record["command_state"],
@@ -187,7 +186,7 @@ def state(record):
 
 def discovery(entity, serial, firmware, config):
     base = f"{config.mqtt_prefix}/{serial}"
-    status_entity = entity.key in {"raw_status", "status_heating", "last_status"}
+    status_entity = entity.key in {"raw_status", "last_status"}
     availability = [
         {"topic": f"{config.mqtt_prefix}/bridge/availability"},
         {"topic": f"{base}/{'status_availability' if status_entity else 'availability'}"},

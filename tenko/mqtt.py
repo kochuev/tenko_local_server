@@ -22,7 +22,9 @@ class Bridge:
         self.client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2, client_id=config.mqtt_client_id,
                                   clean_session=True)
         self.client.max_queued_messages_set(4096)
-        self.client.enable_logger(LOG)
+        protocol_log = LOG.getChild("protocol")
+        protocol_log.setLevel(logging.INFO)
+        self.client.enable_logger(protocol_log)
         if config.mqtt_username:
             self.client.username_pw_set(config.mqtt_username, config.mqtt_password)
         if config.mqtt_tls:
@@ -170,7 +172,7 @@ class Bridge:
                 "command_error": record["command_error"], "attempts": record["attempts"],
                 "separate_raw_status": record["status"],
                 "status_report": record["status_report"],
-                "status_interpretation": "ASSUMED: 0=off, 1=on; other codes unknown",
+                "status_interpretation": "Unknown; raw status is not interpreted as heating",
                 "stage_equivalence": "ASSUMED: ST1/ST2 enable flags duplicate STU",
                 "energy_units": "presumed kWh; scaling/reset/month ordering unverified",
                 "monthly_values": report.get("decoded", {}).get("YSt"),

@@ -21,6 +21,8 @@ def main():
     worker = threading.Thread(target=server.serve_forever, name="http-server")
     worker.start()
     logging.info("Boiler HTTP listening on %s:%s; configuration uses MQTT", config.http_host, config.http_port)
+    if logging.getLogger("tenko.server").isEnabledFor(logging.DEBUG):
+        logging.info("HTTP payload dumps enabled: HTTP EXCHANGE includes request_body and response_body")
     try:
         stopped.wait()
     finally:
