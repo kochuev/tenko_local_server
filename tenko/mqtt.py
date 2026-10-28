@@ -5,9 +5,9 @@ import time
 
 import paho.mqtt.client as mqtt
 
-from .entities import BY_KEY, ENTITIES, discovery, state
+from .entities import BY_KEY, ENTITIES, REMOVED_ENTITIES, discovery, state
 from .protocol import SCHEDULES, SERIAL
-from .schedule_editor import details
+from .schedule_editor import SCHEDULE_MODES, details
 
 LOG = logging.getLogger(__name__)
 
@@ -55,6 +55,7 @@ class Bridge:
         if not self.connected:
             return None
         payload = json.dumps(value, allow_nan=False, separators=(",", ":")) if isinstance(value, (dict, list)) else value
+        LOG.debug("MQTT OUT topic=%r qos=1 retain=true payload=%r", topic, payload)
         info = self.client.publish(topic, payload, qos=1, retain=True)
         if info.rc != mqtt.MQTT_ERR_SUCCESS:
             LOG.error("MQTT publish rejected for %s: %s", topic, mqtt.error_string(info.rc))
@@ -84,6 +85,7 @@ class Bridge:
                 LOG.error("Broker rejected a command/birth subscription: %s; check MQTT ACLs", reason)
 
     def on_message(self, client, userdata, message):
+        LOG.debug("MQTT IN topic=%r retain=%s payload=%r", message.topic, message.retain, message.payload)
         if message.topic == f"{self.config.discovery_prefix}/status":
             if message.payload == b"online":
                 self.refresh(discover=True)
@@ -112,6 +114,10 @@ class Bridge:
                         raise ValueError("Button payload must be PRESS")
                     self.store.editor_command(serial, entity.action, payload)
                 else:
+                    if key == "schedule_mode":
+                        if payload not in SCHEDULE_MODES:
+                            raise ValueError("Choose Whole week, Individual days, or Constant temperature")
+                        payload = SCHEDULE_MODES[payload]
                     self.store.component_command(serial, entity.setting, entity.index, payload)
         except (ValueError, KeyError, UnicodeError) as exc:
             LOG.warning("Rejected MQTT command %s: %s", message.topic, exc)
@@ -145,6 +151,9 @@ class Bridge:
             base = f"{config.mqtt_prefix}/{serial}"
             firmware = record.get("report", {}).get("decoded", {}).get("VER")
             if discover or self.firmwares.get(serial, object()) != firmware:
+                for kind, key in REMOVED_ENTITIES:
+                    self.publish(f"{config.discovery_prefix}/{kind}/tenko_{serial}/{key}/config", "")
+                self.publish(f"{base}/schedule_editor", "")
                 for entity in ENTITIES:
                     self.publish(f"{config.discovery_prefix}/{entity.kind}/tenko_{serial}/{entity.key}/config",
                                  discovery(entity, serial, firmware, config))
@@ -160,17 +169,14 @@ class Bridge:
                 "draft": record["draft"],
                 "command_error": record["command_error"], "attempts": record["attempts"],
                 "separate_raw_status": record["status"],
+                "status_report": record["status_report"],
                 "status_interpretation": "ASSUMED: 0=off, 1=on; other codes unknown",
                 "stage_equivalence": "ASSUMED: ST1/ST2 enable flags duplicate STU",
                 "energy_units": "presumed kWh; scaling/reset/month ordering unverified",
                 "monthly_values": report.get("decoded", {}).get("YSt"),
             })
-            self.publish(f"{base}/schedule_editor", details(record))
             for key in SCHEDULES:
-                self.publish(f"{base}/schedules/{key}", {
-                    "points": report.get("settings", {}).get(key),
-                    "pending": record["pending"].get(key), "draft": record["draft"].get(key),
-                })
+                self.publish(f"{base}/schedules/{key}", details(record, key))
 
     def availability(self, record):
         now = time.time()

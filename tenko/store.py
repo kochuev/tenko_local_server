@@ -29,6 +29,7 @@ class Store:
                 if not isinstance(record, dict) or record.get("serial") != serial:
                     raise ValueError("Invalid boiler record in state file")
                 record.setdefault("schedule_editor", new_editor())
+                record.setdefault("status_report", {})
                 if set(self._new(serial)) - record.keys():
                     raise ValueError(f"Incomplete persisted record for {serial}")
         except Exception:
@@ -66,7 +67,8 @@ class Store:
         return {"serial": serial, "report": {}, "last_report": None, "status": None,
                 "last_status": None, "pending": {}, "sent_at": None, "queued_at": None,
                 "attempts": 0, "command_state": "idle", "command_error": None,
-                "draft": {}, "draft_revision": 0, "revision": 0, "schedule_editor": new_editor()}
+                "draft": {}, "draft_revision": 0, "revision": 0, "schedule_editor": new_editor(),
+                "status_report": {}}
 
     def get(self, serial):
         with self.lock:
@@ -119,7 +121,7 @@ class Store:
             self._write(record)
             return record, response
 
-    def status(self, raw):
+    def status(self, raw, method=None, path=None):
         if "status" not in raw or len(raw["status"]) > 256:
             raise ValueError("Missing or oversized status")
         with self.lock:
@@ -127,7 +129,8 @@ class Store:
                 record = self._read(raw["sn"])
             except KeyError:
                 record = self._new(raw["sn"])
-            record.update(status=raw["status"], last_status=time.time())
+            record.update(status=raw["status"], last_status=time.time(),
+                          status_report={"raw": raw, "method": method, "path": path})
             self._write(record)
             return record
 
@@ -164,8 +167,6 @@ class Store:
 
     def editor_command(self, serial, action, payload):
         with self.lock:
-            if action == "cancel_pending":
-                return self.cancel(serial)
             record = self._read(serial)
             patch = edit(record, action, payload)
             if patch:
@@ -179,15 +180,6 @@ class Store:
             record.update(command_error=message, command_state="error")
             self._write(record)
             LOG.warning("%s: command rejected: %s", serial, message)
-            return record
-
-    def cancel(self, serial):
-        with self.lock:
-            record = self._read(serial)
-            record.update(pending={}, sent_at=None, queued_at=None,
-                          command_state="cancelled", command_error=None)
-            record["revision"] += 1
-            self._write(record)
             return record
 
     def expire(self):

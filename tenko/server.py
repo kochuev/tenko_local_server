@@ -23,6 +23,8 @@ def create_server(config, store, bridge):
             if not isinstance(body, (str, bytes)):
                 body = json.dumps(body, allow_nan=False)
             data = body.encode() if isinstance(body, str) else body
+            LOG.debug("HTTP OUT method=%s path=%r status=%s content_type=%s length=%s body=%r",
+                      self.command, self.path, status, content_type, len(data), data)
             self.send_response(status)
             self.send_header("Content-Type", content_type)
             self.send_header("Content-Length", str(len(data)))
@@ -55,6 +57,13 @@ def create_server(config, store, bridge):
         def handle_request(self):
             path = urlsplit(self.path).path
             try:
+                LOG.debug("HTTP IN peer=%s method=%s path=%r content_type=%s",
+                          self.client_address[0], self.command, self.path, self.headers.get("Content-Type"))
+                data = self.body() if (self.command in {"POST", "PUT", "PATCH", "DELETE"}
+                                       or self.headers.get("Content-Length")
+                                       or self.headers.get("Transfer-Encoding")) else b""
+                LOG.debug("HTTP IN method=%s path=%r length=%s body=%r",
+                          self.command, self.path, len(data), data)
                 parameter_report = path == "/update/param" and self.command == "POST"
                 status_report = bool(config.status_path and path == config.status_path
                                      and self.command == config.status_method)
@@ -62,7 +71,7 @@ def create_server(config, store, bridge):
                     if self.headers.get_content_type() != "application/x-www-form-urlencoded":
                         self.reply(415, {"error": "Expected application/x-www-form-urlencoded"})
                         return
-                    raw = form(self.body())
+                    raw = form(data)
                     self.serial_allowed(raw["sn"])
                     if parameter_report:
                         record, response = store.report(raw)
@@ -73,7 +82,7 @@ def create_server(config, store, bridge):
                         if response == "nochange":
                             response = config.no_change_body
                     else:
-                        record = store.status(raw)
+                        record = store.status(raw, method=self.command, path=path)
                         bridge.emit(record["serial"])
                         response = "status updated"
                     self.reply(200, response, "text/html; charset=UTF-8")

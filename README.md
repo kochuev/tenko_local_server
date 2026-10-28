@@ -37,10 +37,13 @@ server/port if supported. The bridge does not change DNS/router settings.
 
 Use the same broker in Home Assistant's standard MQTT integration. A
 **Tenko Boiler** device is discovered for each allowed serial after its first
-report. Open its device page for all native controls, or adapt the standard
-Entities/Markdown cards in
+report (a status-only report also creates the device, but settings remain
+unavailable until parameter data arrives). Open its device page for all native
+controls, or use the standard cards in
 [`examples/home-assistant.yaml`](examples/home-assistant.yaml). Discovery
-creates entities, not dashboard cards.
+creates entities, not dashboard cards or views. Paste the YAML into a manual
+dashboard using HA's raw configuration editor; adapt entity IDs to your registry.
+It includes separate **Boiler** and **Schedule** views, with no custom cards.
 
 ## Native Home Assistant configuration
 
@@ -61,8 +64,8 @@ These controls show **boiler-reported values**, not optimistic values.
 A change queues a command for the next boiler poll. **Settings upload status**
 remains `pending` until a later report confirms it. Inspect
 **Settings command error** if a command is rejected or not confirmed.
-**Cancel pending settings upload** stops retries but cannot recall a response
-already delivered.
+Accepted uploads keep retrying until the boiler confirms them; there is no
+pending-upload cancellation control.
 
 Main parameter meanings and accepted *new* values:
 
@@ -95,26 +98,28 @@ queues the chosen complete STU tuple; it is not considered applied until
 consistent boiler reports confirm it. There are still only two manual-stage
 enable controls, not duplicated ST1/ST2 and STU switches.
 
-### Compact daily/weekly schedule editor
+### Schedule: individual point rows
 
-All controls below are native MQTT selects, numbers, switches and buttons:
+The **Schedule** dashboard view has eight sections: **Whole week** (ED) and
+**Monday-Sunday** (MO-SU). Every section shows all **ten numbered rows**, with
+independently editable **Hour** and **Target** fields side by side: 80 points
+and 160 native number entities in total. There is no shared day/slot cursor.
+You can edit inactive schedules without activating them.
 
-1. Select **Schedule editor day**: Every day (ED), or Monday-Sunday (MO-SU).
-2. Select **Schedule editor slot**, 1-10.
-3. Change **Schedule draft hour** (whole hour 0-23) and
-   **Schedule draft target (0=OFF)**, or use **Schedule draft OFF**.
-4. Repeat for the required slots. Check **Schedule editor validation**
-   and the native Markdown point-list card.
-5. Press **Apply selected schedule draft**, or **Apply all schedule drafts**.
-6. Wait for `applied` upload status and the editor layer to return to
-   `reported`. Separately choose `GraphD` or `GraphW` to activate that mode.
+Edit a day's points, then press **Apply Monday draft** (or the corresponding
+day), or **Apply all schedule drafts** for an atomic upload of all drafts.
+Wait for `applied` upload status and the day's layer to return to `reported`.
+**Schedule mode** selects **Whole week** (`GraphD`, ED repeated daily) or
+**Individual days** (`GraphW`, Monday-Sunday). **Constant temperature** (`Temp`)
+is also shown so an existing nonschedule mode is represented accurately.
+This selector and the ordinary Control mode select configure the same USE
+setting, and both show confirmed state.
 
-The editor fields are clearly named **draft**: they can show local draft or
-pending values, unlike the ordinary settings controls. **Schedule editor layer**
-distinguishes `reported`, `draft`, `pending`, and `no data`. The selected
-**reported hour/target** sensors remain independent. The day-summary sensor's
-attributes contain all ten displayed points and separate reported, draft and
-pending arrays, plus any validation error.
+Point fields show local **draft or pending** values, not confirmation.
+Each day's **schedule layer** distinguishes `reported`, `draft`, `pending`,
+and `no data`; its **schedule validation** reports whether the displayed day
+can be submitted. Schedule sensor attributes expose all ten displayed points,
+the separate boiler-reported, draft and pending arrays, and validation errors.
 
 Exactly ten slots must be supplied, with strictly increasing whole-hour times.
 A target is **0 = OFF**, or **7-40 C** in steps of 0.1. Values between 0 and 7
@@ -124,29 +129,24 @@ Apply validates the whole day (or all draft days atomically). Received
 duplicate hours are preserved, shown as invalid for new uploads, and must be
 resolved explicitly. There is no implicit sorting, padding or deduplication.
 
-Turning the OFF switch on remembers a known nonzero target for that slot;
-turning it off restores that target if known. If a slot was already OFF and
-no prior nonzero target is known, set a target explicitly rather than
-inventing a default.
+**Discard Monday draft** (and its equivalents) and **Discard all drafts**
+abandon local edits only: already-queued uploads remain pending and keep
+retrying. Drafts and pending uploads survive bridge restarts. Telemetry never
+overwrites a draft; confirming a submitted draft removes it only if it still
+matches what was submitted. Commands for different fixed points cannot be
+redirected by another client's day/slot selection.
 
-**Copy selected schedule to destination** copies the displayed source day to
-the **Schedule copy destination** as a draft. **Copy selected schedule to whole
-week** prepares all seven days as drafts; it does not upload or change
-mode. You can also copy to several days in turn and apply all drafts together.
-**Discard selected schedule draft** and **Discard all drafts** abandon local
-edits only; use Cancel pending separately to stop already-queued retries.
+The dashboard uses standard HA sections, grids and Entities cards with native
+number inputs, not an iframe or the HA Schedule helper. Schedule points are
+step changes, not interpolated curves; duplicate-hour resolution and midnight
+wraparound remain unverified. HA's Schedule helper is not another active
+schedule authority and is not synchronized implicitly.
 
-The editor selection is shared per boiler across HA clients. Avoid editing
-the same boiler concurrently from multiple dashboards. Drafts and selections
-survive bridge restarts. Telemetry never overwrites a draft; confirming a
-submitted draft removes it only if it still matches what was submitted.
-
-**Native-UI limitation:** MQTT discovery has no graphical timetable-grid
-entity. This editor deliberately uses standard HA fields and a Markdown table,
-not an iframe or the HA Schedule helper. Schedule points are step changes,
-not interpolated curves; duplicate-hour resolution and midnight wraparound
-remain unverified. HA's Schedule helper is not another active schedule
-authority and is not synchronized implicitly.
+After upgrading from the compact editor, replace the old dashboard YAML.
+The bridge clears obsolete compact-editor and cancellation discovery topics
+automatically, without deleting pending settings or drafts. The repetitive
+Schedule view can be regenerated with `python -m examples.generate_dashboard`;
+do this before adapting entity IDs, since regeneration resets that view.
 
 ## Environment parameters
 
@@ -171,13 +171,13 @@ Native Python reads process environment directly.
 | `FRESHNESS_TIMEOUT` | `180` | Seconds without parameter reports before boiler availability becomes offline |
 | `CONFIRMATION_TIMEOUT` | `600` | Seconds before unconfirmed commands become errors; pending retries are retained |
 | `STATE_PATH` | `data/state.json` native / `/data/state.json` Compose | JSON cache/draft/pending file |
-| `STATUS_PATH`, `STATUS_METHOD` | empty, disabled | Both required for the separately captured status exchange |
+| `STATUS_PATH`, `STATUS_METHOD` | `/update/status`, `POST` | Status exchange endpoint; blank legacy values use these defaults |
 | `NO_CHANGE_BODY` | `nochange` | Exact no-update response; can explicitly be empty |
 | `ALLOWED_SERIALS` | empty native | Optional comma-separated serial allowlist; example restricts to captured serial |
-| `LOG_LEVEL` | `INFO` | Python logging level |
+| `LOG_LEVEL` | `INFO` | Python logging level; `DEBUG` or `debug` dumps incoming/outgoing HTTP and MQTT payloads |
 
 There are no `EDITOR_*` or `FRAME_ANCESTORS` settings anymore. Old versions'
-JSON files are migrated automatically to add native editor selections without
+JSON files are migrated automatically to add new diagnostic metadata without
 deleting existing reports, pending settings or drafts.
 
 For private MQTT certificate authorities, mount a CA bundle read-only, e.g.
@@ -206,9 +206,8 @@ For default prefixes and serial `211229_005`:
 | `tenko/211229_005/availability` | Parameter-report freshness |
 | `tenko/211229_005/status_availability` | Independent separate-status freshness |
 | `tenko/211229_005/state` | Confirmed components, editor values and upload status |
-| `tenko/211229_005/diagnostics` | Raw/decoded fields, reported settings, pending commands, drafts and assumptions |
-| `tenko/211229_005/schedules/ED` | `{points, pending, draft}`; equivalent topics for MO-SU |
-| `tenko/211229_005/schedule_editor` | Selected day/slot, displayed points, layer, reported/pending/draft arrays and validation error |
+| `tenko/211229_005/diagnostics` | Raw/decoded parameters, last raw status request/method/path, reported settings, pending commands, drafts and assumptions |
+| `tenko/211229_005/schedules/ED` | `{points, displayed_points, pending, draft, layer, validation_error, ...}`; equivalent topics for MO-SU |
 | `tenko/211229_005/command/<entity-key>` | Native control command, never retained |
 | `tenko/211229_005/command/settings` | Atomic JSON patch of demonstrated response keys |
 | `homeassistant/<component>/tenko_211229_005/<entity-key>/config` | Retained HA discovery configuration |
@@ -226,14 +225,17 @@ Ordinary command keys:
 | `manual_1`, `manual_2` | STU[0/1] |
 | `pump_start`, `pump_stop` | pNA[0/1] |
 
-Schedule command keys are `editor_day` (English day name), `editor_slot`
-(string 1-10), `editor_hour`, `editor_target`, `editor_off` (On/Off),
-`editor_copy_to` (day name), and the native button keys `editor_apply_day`,
-`editor_apply_all`, `editor_discard_day`, `editor_discard_all`,
-`editor_copy_day`, `editor_copy_week`, `cancel_pending`, `resolve_stages`.
-Every button uses exact payload `PRESS`. `stage_resolution_source` accepts
-`ST1/ST2` or `STU`. All entities and their full discovery payloads are defined
-centrally in `tenko/entities.py`.
+Schedule point commands use `schedule_<DAY>_<POINT>_hour` and
+`schedule_<DAY>_<POINT>_target`, e.g. `schedule_MO_01_hour` with `6` and
+`schedule_MO_01_target` with `21.5`. DAY is ED/MO/TU/WE/TH/FR/SA/SU;
+POINT is 01-10. `schedule_mode` accepts `Whole week`, `Individual days`, or
+`Constant temperature`.
+
+Native button keys are `schedule_<DAY>_apply`, `schedule_<DAY>_discard`,
+`editor_apply_all`, `editor_discard_all`, and `resolve_stages`.
+Every button uses exact payload `PRESS`. There is no `cancel_pending` command.
+`stage_resolution_source` accepts `ST1/ST2` or `STU`. All entities and their
+full discovery payloads are defined centrally in `tenko/entities.py`.
 
 Example atomic command for automations:
 
@@ -245,8 +247,8 @@ mosquitto_pub -h BROKER -u USER -P PASSWORD \
 
 Do **not** retain commands. Retained commands delivered on subscription are
 ignored. Retained *pending state* from the JSON file is different: it is an
-already-accepted user request and is retried until confirmation or explicit
-cancellation. Discovery/state are republished after broker reconnect and
+already-accepted user request and is retried until confirmation.
+Discovery/state are republished after broker reconnect and
 `<DISCOVERY_PREFIX>/status` = `online` (HA birth).
 
 Use broker authentication and ACLs: only trusted HA/users should publish
@@ -274,11 +276,14 @@ responses are HTTP 200 with `nochange` or an explicitly configured empty body.
 Sending a response is not proof of application; subsequent reports must agree.
 The original historical captures remain unchanged in `prompt.md`.
 
-The separate status exchange's path/method are missing from the capture.
-Configure both variables deliberately once known; supported form-body methods
-are POST/PUT/PATCH. Its acknowledgment is exact `status updated`. Raw status
-and its timestamp remain independent of MOD/TEN telemetry; only the explicitly
-assumed `0=off, 1=on` state is derived. Other codes are unknown.
+`POST /update/status` is enabled by default, as confirmed by the boiler's
+access log. It accepts form data such as `sn=211229_005&status=1` and returns
+the exact acknowledgment `status updated`. The last raw form, method, path,
+status and receipt timestamp are persisted and exposed through MQTT.
+STATUS_PATH/STATUS_METHOD can override the endpoint if needed; supported
+form-body methods are POST/PUT/PATCH. Raw status and its timestamp remain
+independent of MOD/TEN telemetry; only the explicitly assumed `0=off, 1=on`
+state is derived. Other codes are unknown.
 
 TA/TF/TR, PM-associated temperature and pressure are measurements. NA, TEN1/
 TEN2, MOD heating/counts, PM state and AF phase are actual states, not settings.
@@ -298,7 +303,8 @@ historical energy import is enabled.
 
 Availability requires both bridge connection and fresh boiler reports; a
 live bridge alone does not make old temperatures fresh. Separate-status
-entities require independent status freshness too.
+entities require bridge connection and fresh status updates, independently
+of parameter-report freshness; status does not refresh old temperatures.
 
 ## Persistence and diagnostics
 
@@ -315,6 +321,14 @@ details and raw state are available through MQTT diagnostic entities/topics.
 MQTT outages do not block durable boiler exchanges; reconnect republishes the
 latest cache and discovery. Storage failures reject commands explicitly.
 
+Set `LOG_LEVEL=DEBUG` (lowercase `debug` also works), then recreate the
+container with `docker compose up -d --build` to enable data dumps.
+`docker compose logs -f tenko` will include HTTP request/response methods,
+paths and exact body bytes (including unknown paths), plus incoming/outgoing
+MQTT topics and payloads. Normal INFO logging omits these dumps.
+DEBUG logs include serial numbers and raw telemetry/settings, so treat them
+as private. Authentication headers and MQTT broker passwords are not dumped.
+
 ```sh
 .venv/bin/python -m unittest discover -s tests -v
 docker compose config --quiet
@@ -323,5 +337,5 @@ docker compose config --quiet
 TENKO_DOCKER_TESTS=1 .venv/bin/python -m unittest discover -s tests -p test_docker.py -v
 ```
 
-Physical boiler acceptance and the uncaptured status request still require
-verification against the actual installation.
+Physical boiler acceptance, including actual status payloads and schedule
+execution, still requires verification against the installation.

@@ -2,7 +2,7 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 
 from .protocol import SCHEDULES, number
-from .schedule_editor import DAY_NAMES, editor_state
+from .schedule_editor import DAY_BUTTONS, DAY_NAMES, POINT_CONTROLS, SCHEDULE_MODES, editor_state
 
 
 @dataclass(frozen=True)
@@ -86,42 +86,40 @@ control("manual_2", "Manual stage 2 enable (modulation off only)", "STU", 1, "sw
 control("pump_start", "Pump lead-in delay", "pNA", 0, low=1, high=15, unit="min")
 control("pump_stop", "Pump run-on delay", "pNA", 1, low=1, high=15, unit="min")
 ENTITIES.extend([
-    Entity("editor_day", "Schedule editor day", kind="select", category="config",
-           action="editor_day", options=tuple(DAY_NAMES.values())),
-    Entity("editor_slot", "Schedule editor slot", kind="select", category="config",
-           action="editor_slot", options=tuple(str(i) for i in range(1, 11))),
-    Entity("editor_hour", "Schedule draft hour", kind="number", category="config",
-           action="editor_hour", minimum=0, maximum=23),
-    Entity("editor_target", "Schedule draft target (0=OFF)", kind="number", unit="°C", category="config",
-           action="editor_target", minimum=0, maximum=40, step=.1),
-    Entity("editor_off", "Schedule draft OFF", kind="switch", category="config", action="editor_off"),
-    Entity("editor_copy_to", "Schedule copy destination", kind="select", category="config",
-           action="editor_copy_to", options=tuple(DAY_NAMES.values())),
+    Entity("schedule_mode", "Schedule mode", kind="select", category="config",
+           setting="USE", options=tuple(SCHEDULE_MODES)),
     Entity("stage_resolution_source", "Manual-stage conflict source", kind="select", category="config",
            action="stage_resolution_source", options=("ST1/ST2", "STU")),
 ])
 for key, name in (
-    ("editor_apply_day", "Apply selected schedule draft"),
     ("editor_apply_all", "Apply all schedule drafts"),
-    ("editor_discard_day", "Discard selected schedule draft"),
     ("editor_discard_all", "Discard all drafts"),
-    ("editor_copy_day", "Copy selected schedule to destination"),
-    ("editor_copy_week", "Copy selected schedule to whole week"),
-    ("cancel_pending", "Cancel pending settings upload"),
     ("resolve_stages", "Resolve manual-stage conflict using selected source"),
 ):
     ENTITIES.append(Entity(key, name, kind="button", category="config", action=key))
-for key, name in (
-    ("editor_layer", "Schedule editor layer"),
-    ("editor_validation", "Schedule editor validation"),
-    ("editor_day_summary", "Schedule editor day summary"),
-):
-    ENTITIES.append(Entity(key, name))
-ENTITIES.extend([
-    Entity("editor_reported_hour", "Schedule selected reported hour"),
-    Entity("editor_reported_target", "Schedule selected reported target", unit="°C"),
-])
+for key, (day, slot, component) in POINT_CONTROLS.items():
+    field = "hour" if component == 0 else "target (0=OFF)"
+    ENTITIES.append(Entity(
+        key, f"{DAY_NAMES[day]} point {slot + 1:02d} {field}", kind="number", category="config",
+        action=key, minimum=0, maximum=23 if component == 0 else 40,
+        step=1 if component == 0 else .1, unit=None if component == 0 else "°C"))
+for key, (day, action) in DAY_BUTTONS.items():
+    ENTITIES.append(Entity(key, f"{action.title()} {DAY_NAMES[day]} draft",
+                           kind="button", category="config", action=key))
+for day in SCHEDULES:
+    ENTITIES.extend([
+        Entity(f"schedule_{day}_layer", f"{DAY_NAMES[day]} schedule layer"),
+        Entity(f"schedule_{day}_validation", f"{DAY_NAMES[day]} schedule validation"),
+    ])
 BY_KEY = {entity.key: entity for entity in ENTITIES}
+REMOVED_ENTITIES = (
+    ("select", "editor_day"), ("select", "editor_slot"), ("select", "editor_copy_to"),
+    ("number", "editor_hour"), ("number", "editor_target"), ("switch", "editor_off"),
+    ("button", "editor_apply_day"), ("button", "editor_discard_day"),
+    ("button", "editor_copy_day"), ("button", "editor_copy_week"), ("button", "cancel_pending"),
+    ("sensor", "editor_layer"), ("sensor", "editor_validation"), ("sensor", "editor_day_summary"),
+    ("sensor", "editor_reported_hour"), ("sensor", "editor_reported_target"),
+)
 
 
 def timestamp(value):
@@ -180,6 +178,8 @@ def state(record):
                 value = None
             elif entity.kind == "select" and value not in ("Temp", "GraphD", "GraphW"):
                 value = None
+            if entity.key == "schedule_mode":
+                value = {wire: label for label, wire in SCHEDULE_MODES.items()}.get(value)
             values[entity.key] = value
     values.update(editor_state(record))
     return values
@@ -187,14 +187,13 @@ def state(record):
 
 def discovery(entity, serial, firmware, config):
     base = f"{config.mqtt_prefix}/{serial}"
+    status_entity = entity.key in {"raw_status", "status_heating", "last_status"}
     availability = [
         {"topic": f"{config.mqtt_prefix}/bridge/availability"},
-        {"topic": f"{base}/availability"},
+        {"topic": f"{base}/{'status_availability' if status_entity else 'availability'}"},
         {"topic": f"{base}/state",
          "value_template": "{{ 'online' if value_json." + entity.key + " is not none else 'offline' }}"},
     ]
-    if entity.key in {"raw_status", "status_heating", "last_status"}:
-        availability.append({"topic": f"{base}/status_availability"})
     payload = {
         "name": entity.name, "unique_id": f"tenko_{serial}_{entity.key}",
         "state_topic": f"{base}/state",
@@ -227,11 +226,9 @@ def discovery(entity, serial, firmware, config):
     if entity.kind == "select":
         payload["options"] = list(entity.options) if entity.options else ["Temp", "GraphD", "GraphW"]
         payload.pop("optimistic", None)
-    if entity.key.startswith("schedule_"):
-        schedule = entity.key.removeprefix("schedule_")
+    if entity.kind == "sensor" and entity.key.startswith("schedule_") and entity.key.split("_")[1] in SCHEDULES:
+        schedule = entity.key.split("_")[1]
         payload.update(json_attributes_topic=f"{base}/schedules/{schedule}")
     if entity.key in {"raw_fields", "parse_errors", "stage_conflict", "command_state", "raw_status"}:
         payload["json_attributes_topic"] = f"{base}/diagnostics"
-    if entity.key in {"editor_layer", "editor_validation", "editor_day_summary"}:
-        payload["json_attributes_topic"] = f"{base}/schedule_editor"
     return payload

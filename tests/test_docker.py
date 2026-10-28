@@ -61,15 +61,17 @@ class DockerFlowTests(unittest.TestCase):
                     " && exec mosquitto -c /mosquitto/config/mosquitto.conf")
         self.connect_observer()
         self.client.publish("tenko/211229_005/command/modulation", "Off", qos=1, retain=True).wait_for_publish(3)
+        self.client.publish("homeassistant/button/tenko_211229_005/cancel_pending/config",
+                            '{"name":"Old cancellation control"}', qos=1, retain=True).wait_for_publish(3)
         self.docker("run", "-d", "--name", self.app, "--network", self.network,
                     "--read-only", "--cap-drop", "ALL", "-p", "127.0.0.1::9080",
                     "-e", f"MQTT_HOST={self.broker}", "-e", "MQTT_USERNAME=bridge",
-                    "-e", "MQTT_PASSWORD=test-only", "tenko-local:latest")
+                    "-e", "MQTT_PASSWORD=test-only", "-e", "LOG_LEVEL=debug", "tenko-local:latest")
         self.set_base()
         self.raw = form(next(line for line in (ROOT / "prompt.md").read_text().splitlines()
                              if line.startswith("sn=")).encode())
         self.assertEqual(self.poll(), "nochange")
-        self.wait_state(lambda value: value.get("editor_day") == "Every day")
+        self.wait_state(lambda value: value.get("schedule_mode") == "Whole week")
 
     def cleanup(self):
         self.client.disconnect()
@@ -119,18 +121,19 @@ class DockerFlowTests(unittest.TestCase):
         return self.http("/update/param", urlencode(self.raw).encode())
 
     def test_native_mqtt_schedule_lifecycle(self):
-        self.send("editor_day", "Monday")
-        self.wait_state(lambda value: value["editor_day"] == "Monday")
-        self.send("editor_hour", "1")
-        self.wait_state(lambda value: value["editor_hour"] == 1)
-        self.send("editor_target", "22")
-        values = self.wait_state(lambda value: value["editor_target"] == 22)
-        self.assertEqual(values["editor_reported_hour"], 2)
-        self.assertEqual(values["editor_reported_target"], 39)
-        self.assertEqual(values["editor_layer"], "draft")
+        self.wait(lambda: self.latest.get("homeassistant/button/tenko_211229_005/cancel_pending/config") == "")
+        self.assertEqual(self.http("/update/status", b"sn=211229_005&status=1"), "status updated")
+        self.wait_state(lambda value: value["raw_status"] == "1")
+        self.wait(lambda: self.topic_json("diagnostics")["status_report"]["path"] == "/update/status")
+        self.send("schedule_MO_01_hour", "1")
+        self.wait_state(lambda value: value["schedule_MO_01_hour"] == 1)
+        self.send("schedule_MO_01_target", "22")
+        values = self.wait_state(lambda value: value["schedule_MO_01_target"] == 22)
+        self.assertEqual(values["schedule_MO_layer"], "draft")
+        self.assertEqual(self.topic_json("schedules/MO")["points"][0], [2, 39])
         self.assertEqual(self.poll(), "nochange")
-        self.send("editor_apply_day", "PRESS")
-        self.wait_state(lambda value: value["editor_layer"] == "pending")
+        self.send("schedule_MO_apply", "PRESS")
+        self.wait_state(lambda value: value["schedule_MO_layer"] == "pending")
         uploaded = self.poll()
         self.assertIn(";MO=01,22.0/", uploaded)
         self.assertEqual(uploaded.count(";"), 16)
@@ -138,24 +141,41 @@ class DockerFlowTests(unittest.TestCase):
         self.docker("restart", self.app)
         self.set_base()
         self.assertEqual(self.poll(), uploaded)
+        self.wait(lambda: self.topic_json("diagnostics")["status_report"]["raw"]["status"] == "1")
         self.raw["MO"] = self.raw["MO"].replace("[02,39.0]", "[01,22.0]", 1)
         self.assertEqual(self.poll(), "nochange")
-        self.wait_state(lambda value: value["command_state"] == "applied" and value["editor_layer"] == "reported")
+        self.wait_state(lambda value: value["command_state"] == "applied" and value["schedule_MO_layer"] == "reported")
         self.wait(lambda: self.topic_json("diagnostics")["pending"] == {}
                   and self.topic_json("diagnostics")["draft"] == {})
 
         # A local boiler-panel change must win once no accepted command is pending.
         self.raw["MO"] = self.raw["MO"].replace("[01,22.0]", "[01,21.0]", 1)
         self.assertEqual(self.poll(), "nochange")
-        self.wait_state(lambda value: value["editor_target"] == 21 and value["editor_reported_target"] == 21)
-        self.send("editor_copy_to", "Tuesday")
-        self.wait_state(lambda value: value["editor_copy_to"] == "Tuesday")
-        self.send("editor_copy_day", "PRESS")
+        self.wait_state(lambda value: value["schedule_MO_01_target"] == 21)
+        self.send("schedule_TU_01_target", "21")
         self.wait(lambda: "TU" in self.topic_json("diagnostics")["draft"])
-        self.send("editor_day", "Tuesday")
-        self.wait_state(lambda value: value["editor_day"] == "Tuesday" and value["editor_target"] == 21)
-        self.send("editor_discard_day", "PRESS")
-        self.wait_state(lambda value: value["editor_layer"] == "reported" and value["editor_target"] == 38)
+        self.send("schedule_TU_discard", "PRESS")
+        self.wait_state(lambda value: value["schedule_TU_layer"] == "reported"
+                        and value["schedule_TU_01_target"] == 38)
+
+        self.send("schedule_mode", "Individual days")
+        self.wait(lambda: self.topic_json("diagnostics")["pending"].get("USE") == "GraphW")
+        self.send("editor_discard_all", "PRESS")
+        self.wait(lambda: self.topic_json("diagnostics")["draft"] == {})
+        self.assertIn("USE=GraphW", self.poll())
+        self.send("cancel_pending", "PRESS")
+        self.wait_state(lambda value: "Unknown control" in value["command_error"])
+        self.assertIn("USE=GraphW", self.poll())
+        self.raw["USE"] = "GraphW"
+        self.assertEqual(self.poll(), "nochange")
+        self.wait_state(lambda value: value["schedule_mode"] == "Individual days"
+                        and value["command_state"] == "applied")
+
+        logs = self.docker("logs", self.app)
+        for expected in ("HTTP IN", "HTTP OUT", "MQTT IN", "MQTT OUT",
+                         "sn=211229_005&status=1", "status updated", uploaded):
+            self.assertIn(expected, logs)
+        self.assertNotIn("test-only", logs)
 
         for path in ("/", "/api/boilers", "/static/editor.js"):
             with self.assertRaises(HTTPError) as error:
@@ -172,11 +192,12 @@ class DockerFlowTests(unittest.TestCase):
             self.latest.clear()
         self.docker("restart", self.broker)
         self.connect_observer()
-        topic = "homeassistant/select/tenko_211229_005/editor_day/config"
+        topic = "homeassistant/select/tenko_211229_005/schedule_mode/config"
         def editor_discovery():
             with self.messages_lock:
                 return json.loads(self.latest[topic])
         payload = self.wait(editor_discovery)
-        self.assertIn("Monday", payload["options"])
+        self.assertEqual(payload["options"], ["Whole week", "Individual days", "Constant temperature"])
         self.assertNotIn("configuration_url", payload["device"])
-        self.wait_state(lambda value: value["editor_day"] == "Tuesday")
+        self.wait_state(lambda value: value["schedule_MO_01_target"] == 21
+                        and value["schedule_mode"] == "Individual days")

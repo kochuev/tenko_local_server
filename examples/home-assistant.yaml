@@ -37,42 +37,6 @@ views:
           - button.tenko_boiler_resolve_manual_stage_conflict_using_selected_source
           - sensor.tenko_boiler_settings_upload_status
           - sensor.tenko_boiler_settings_command_error
-          - button.tenko_boiler_cancel_pending_settings_upload
-      - type: entities
-        title: Schedule editor (draft, not confirmed state)
-        entities:
-          - select.tenko_boiler_schedule_editor_day
-          - select.tenko_boiler_schedule_editor_slot
-          - number.tenko_boiler_schedule_draft_hour
-          - number.tenko_boiler_schedule_draft_target_0_off
-          - switch.tenko_boiler_schedule_draft_off
-          - sensor.tenko_boiler_schedule_selected_reported_hour
-          - sensor.tenko_boiler_schedule_selected_reported_target
-          - sensor.tenko_boiler_schedule_editor_layer
-          - sensor.tenko_boiler_schedule_editor_validation
-          - button.tenko_boiler_apply_selected_schedule_draft
-          - button.tenko_boiler_apply_all_schedule_drafts
-          - button.tenko_boiler_discard_selected_schedule_draft
-          - button.tenko_boiler_discard_all_drafts
-          - select.tenko_boiler_schedule_copy_destination
-          - button.tenko_boiler_copy_selected_schedule_to_destination
-          - button.tenko_boiler_copy_selected_schedule_to_whole_week
-      - type: markdown
-        title: Selected timetable
-        content: |
-          {% set entity = 'sensor.tenko_boiler_schedule_editor_day_summary' %}
-          **{{ state_attr(entity, 'day_name') }}**
-          — {{ state_attr(entity, 'layer') }}
-
-          {{ state_attr(entity, 'validation_error') or '' }}
-
-          | Slot | Time | Target |
-          |---|---|---|
-          {% for point in state_attr(entity, 'points') or [] %}
-          | {{ loop.index }} | {{ '%02d:00' | format(point[0]) }} | {{ 'OFF' if point[1] == 0 else point[1] ~ ' C' }} |
-          {% endfor %}
-
-          Drafts upload only when Apply is pressed. Activation uses Control mode.
       - type: entities
         title: Boiler-reported consumption (reference only)
         entities:
@@ -92,3 +56,947 @@ views:
           - sensor.tenko_boiler_boiler_monthly_index_9_presumed_kwh
           - sensor.tenko_boiler_boiler_monthly_index_10_presumed_kwh
           - sensor.tenko_boiler_boiler_monthly_index_11_presumed_kwh
+  # Generated Schedule view - regenerate before customizing entity IDs.
+  - title: Schedule
+    path: schedule
+    type: sections
+    max_columns: 3
+    sections:
+      - type: grid
+        cards:
+          - type: heading
+            heading: Schedule
+          - type: entities
+            title: Mode and upload
+            entities:
+              - select.tenko_boiler_schedule_mode
+              - button.tenko_boiler_apply_all_schedule_drafts
+              - button.tenko_boiler_discard_all_drafts
+              - sensor.tenko_boiler_settings_upload_status
+              - sensor.tenko_boiler_settings_command_error
+          - type: markdown
+            content: >-
+              Each numbered line has Hour (0-23) and Target in C (0 = OFF, otherwise 7-40).
+              Edit all ten points, then Apply. Whole week repeats ED every day;
+              Individual days uses Monday-Sunday. Editing does not activate a mode.
+              Discard only removes drafts; queued uploads continue until confirmed.
+      - type: grid
+        cards:
+          - type: heading
+            heading: "Whole week"
+          - type: entities
+            show_header_toggle: false
+            entities:
+              - sensor.tenko_boiler_whole_week_schedule_layer
+              - sensor.tenko_boiler_whole_week_schedule_validation
+              - button.tenko_boiler_apply_whole_week_draft
+              - button.tenko_boiler_discard_whole_week_draft
+          - type: grid
+            columns: 2
+            square: false
+            cards:
+              - type: entities
+                show_header_toggle: false
+                entities:
+                  - entity: number.tenko_boiler_whole_week_point_01_hour
+                    name: "01 Hour"
+              - type: entities
+                show_header_toggle: false
+                entities:
+                  - entity: number.tenko_boiler_whole_week_point_01_target_0_off
+                    name: "01 Target"
+              - type: entities
+                show_header_toggle: false
+                entities:
+                  - entity: number.tenko_boiler_whole_week_point_02_hour
+                    name: "02 Hour"
+              - type: entities
+                show_header_toggle: false
+                entities:
+                  - entity: number.tenko_boiler_whole_week_point_02_target_0_off
+                    name: "02 Target"
+              - type: entities
+                show_header_toggle: false
+                entities:
+                  - entity: number.tenko_boiler_whole_week_point_03_hour
+                    name: "03 Hour"
+              - type: entities
+                show_header_toggle: false
+                entities:
+                  - entity: number.tenko_boiler_whole_week_point_03_target_0_off
+                    name: "03 Target"
+              - type: entities
+                show_header_toggle: false
+                entities:
+                  - entity: number.tenko_boiler_whole_week_point_04_hour
+                    name: "04 Hour"
+              - type: entities
+                show_header_toggle: false
+                entities:
+                  - entity: number.tenko_boiler_whole_week_point_04_target_0_off
+                    name: "04 Target"
+              - type: entities
+                show_header_toggle: false
+                entities:
+                  - entity: number.tenko_boiler_whole_week_point_05_hour
+                    name: "05 Hour"
+              - type: entities
+                show_header_toggle: false
+                entities:
+                  - entity: number.tenko_boiler_whole_week_point_05_target_0_off
+                    name: "05 Target"
+              - type: entities
+                show_header_toggle: false
+                entities:
+                  - entity: number.tenko_boiler_whole_week_point_06_hour
+                    name: "06 Hour"
+              - type: entities
+                show_header_toggle: false
+                entities:
+                  - entity: number.tenko_boiler_whole_week_point_06_target_0_off
+                    name: "06 Target"
+              - type: entities
+                show_header_toggle: false
+                entities:
+                  - entity: number.tenko_boiler_whole_week_point_07_hour
+                    name: "07 Hour"
+              - type: entities
+                show_header_toggle: false
+                entities:
+                  - entity: number.tenko_boiler_whole_week_point_07_target_0_off
+                    name: "07 Target"
+              - type: entities
+                show_header_toggle: false
+                entities:
+                  - entity: number.tenko_boiler_whole_week_point_08_hour
+                    name: "08 Hour"
+              - type: entities
+                show_header_toggle: false
+                entities:
+                  - entity: number.tenko_boiler_whole_week_point_08_target_0_off
+                    name: "08 Target"
+              - type: entities
+                show_header_toggle: false
+                entities:
+                  - entity: number.tenko_boiler_whole_week_point_09_hour
+                    name: "09 Hour"
+              - type: entities
+                show_header_toggle: false
+                entities:
+                  - entity: number.tenko_boiler_whole_week_point_09_target_0_off
+                    name: "09 Target"
+              - type: entities
+                show_header_toggle: false
+                entities:
+                  - entity: number.tenko_boiler_whole_week_point_10_hour
+                    name: "10 Hour"
+              - type: entities
+                show_header_toggle: false
+                entities:
+                  - entity: number.tenko_boiler_whole_week_point_10_target_0_off
+                    name: "10 Target"
+      - type: grid
+        cards:
+          - type: heading
+            heading: "Monday"
+          - type: entities
+            show_header_toggle: false
+            entities:
+              - sensor.tenko_boiler_monday_schedule_layer
+              - sensor.tenko_boiler_monday_schedule_validation
+              - button.tenko_boiler_apply_monday_draft
+              - button.tenko_boiler_discard_monday_draft
+          - type: grid
+            columns: 2
+            square: false
+            cards:
+              - type: entities
+                show_header_toggle: false
+                entities:
+                  - entity: number.tenko_boiler_monday_point_01_hour
+                    name: "01 Hour"
+              - type: entities
+                show_header_toggle: false
+                entities:
+                  - entity: number.tenko_boiler_monday_point_01_target_0_off
+                    name: "01 Target"
+              - type: entities
+                show_header_toggle: false
+                entities:
+                  - entity: number.tenko_boiler_monday_point_02_hour
+                    name: "02 Hour"
+              - type: entities
+                show_header_toggle: false
+                entities:
+                  - entity: number.tenko_boiler_monday_point_02_target_0_off
+                    name: "02 Target"
+              - type: entities
+                show_header_toggle: false
+                entities:
+                  - entity: number.tenko_boiler_monday_point_03_hour
+                    name: "03 Hour"
+              - type: entities
+                show_header_toggle: false
+                entities:
+                  - entity: number.tenko_boiler_monday_point_03_target_0_off
+                    name: "03 Target"
+              - type: entities
+                show_header_toggle: false
+                entities:
+                  - entity: number.tenko_boiler_monday_point_04_hour
+                    name: "04 Hour"
+              - type: entities
+                show_header_toggle: false
+                entities:
+                  - entity: number.tenko_boiler_monday_point_04_target_0_off
+                    name: "04 Target"
+              - type: entities
+                show_header_toggle: false
+                entities:
+                  - entity: number.tenko_boiler_monday_point_05_hour
+                    name: "05 Hour"
+              - type: entities
+                show_header_toggle: false
+                entities:
+                  - entity: number.tenko_boiler_monday_point_05_target_0_off
+                    name: "05 Target"
+              - type: entities
+                show_header_toggle: false
+                entities:
+                  - entity: number.tenko_boiler_monday_point_06_hour
+                    name: "06 Hour"
+              - type: entities
+                show_header_toggle: false
+                entities:
+                  - entity: number.tenko_boiler_monday_point_06_target_0_off
+                    name: "06 Target"
+              - type: entities
+                show_header_toggle: false
+                entities:
+                  - entity: number.tenko_boiler_monday_point_07_hour
+                    name: "07 Hour"
+              - type: entities
+                show_header_toggle: false
+                entities:
+                  - entity: number.tenko_boiler_monday_point_07_target_0_off
+                    name: "07 Target"
+              - type: entities
+                show_header_toggle: false
+                entities:
+                  - entity: number.tenko_boiler_monday_point_08_hour
+                    name: "08 Hour"
+              - type: entities
+                show_header_toggle: false
+                entities:
+                  - entity: number.tenko_boiler_monday_point_08_target_0_off
+                    name: "08 Target"
+              - type: entities
+                show_header_toggle: false
+                entities:
+                  - entity: number.tenko_boiler_monday_point_09_hour
+                    name: "09 Hour"
+              - type: entities
+                show_header_toggle: false
+                entities:
+                  - entity: number.tenko_boiler_monday_point_09_target_0_off
+                    name: "09 Target"
+              - type: entities
+                show_header_toggle: false
+                entities:
+                  - entity: number.tenko_boiler_monday_point_10_hour
+                    name: "10 Hour"
+              - type: entities
+                show_header_toggle: false
+                entities:
+                  - entity: number.tenko_boiler_monday_point_10_target_0_off
+                    name: "10 Target"
+      - type: grid
+        cards:
+          - type: heading
+            heading: "Tuesday"
+          - type: entities
+            show_header_toggle: false
+            entities:
+              - sensor.tenko_boiler_tuesday_schedule_layer
+              - sensor.tenko_boiler_tuesday_schedule_validation
+              - button.tenko_boiler_apply_tuesday_draft
+              - button.tenko_boiler_discard_tuesday_draft
+          - type: grid
+            columns: 2
+            square: false
+            cards:
+              - type: entities
+                show_header_toggle: false
+                entities:
+                  - entity: number.tenko_boiler_tuesday_point_01_hour
+                    name: "01 Hour"
+              - type: entities
+                show_header_toggle: false
+                entities:
+                  - entity: number.tenko_boiler_tuesday_point_01_target_0_off
+                    name: "01 Target"
+              - type: entities
+                show_header_toggle: false
+                entities:
+                  - entity: number.tenko_boiler_tuesday_point_02_hour
+                    name: "02 Hour"
+              - type: entities
+                show_header_toggle: false
+                entities:
+                  - entity: number.tenko_boiler_tuesday_point_02_target_0_off
+                    name: "02 Target"
+              - type: entities
+                show_header_toggle: false
+                entities:
+                  - entity: number.tenko_boiler_tuesday_point_03_hour
+                    name: "03 Hour"
+              - type: entities
+                show_header_toggle: false
+                entities:
+                  - entity: number.tenko_boiler_tuesday_point_03_target_0_off
+                    name: "03 Target"
+              - type: entities
+                show_header_toggle: false
+                entities:
+                  - entity: number.tenko_boiler_tuesday_point_04_hour
+                    name: "04 Hour"
+              - type: entities
+                show_header_toggle: false
+                entities:
+                  - entity: number.tenko_boiler_tuesday_point_04_target_0_off
+                    name: "04 Target"
+              - type: entities
+                show_header_toggle: false
+                entities:
+                  - entity: number.tenko_boiler_tuesday_point_05_hour
+                    name: "05 Hour"
+              - type: entities
+                show_header_toggle: false
+                entities:
+                  - entity: number.tenko_boiler_tuesday_point_05_target_0_off
+                    name: "05 Target"
+              - type: entities
+                show_header_toggle: false
+                entities:
+                  - entity: number.tenko_boiler_tuesday_point_06_hour
+                    name: "06 Hour"
+              - type: entities
+                show_header_toggle: false
+                entities:
+                  - entity: number.tenko_boiler_tuesday_point_06_target_0_off
+                    name: "06 Target"
+              - type: entities
+                show_header_toggle: false
+                entities:
+                  - entity: number.tenko_boiler_tuesday_point_07_hour
+                    name: "07 Hour"
+              - type: entities
+                show_header_toggle: false
+                entities:
+                  - entity: number.tenko_boiler_tuesday_point_07_target_0_off
+                    name: "07 Target"
+              - type: entities
+                show_header_toggle: false
+                entities:
+                  - entity: number.tenko_boiler_tuesday_point_08_hour
+                    name: "08 Hour"
+              - type: entities
+                show_header_toggle: false
+                entities:
+                  - entity: number.tenko_boiler_tuesday_point_08_target_0_off
+                    name: "08 Target"
+              - type: entities
+                show_header_toggle: false
+                entities:
+                  - entity: number.tenko_boiler_tuesday_point_09_hour
+                    name: "09 Hour"
+              - type: entities
+                show_header_toggle: false
+                entities:
+                  - entity: number.tenko_boiler_tuesday_point_09_target_0_off
+                    name: "09 Target"
+              - type: entities
+                show_header_toggle: false
+                entities:
+                  - entity: number.tenko_boiler_tuesday_point_10_hour
+                    name: "10 Hour"
+              - type: entities
+                show_header_toggle: false
+                entities:
+                  - entity: number.tenko_boiler_tuesday_point_10_target_0_off
+                    name: "10 Target"
+      - type: grid
+        cards:
+          - type: heading
+            heading: "Wednesday"
+          - type: entities
+            show_header_toggle: false
+            entities:
+              - sensor.tenko_boiler_wednesday_schedule_layer
+              - sensor.tenko_boiler_wednesday_schedule_validation
+              - button.tenko_boiler_apply_wednesday_draft
+              - button.tenko_boiler_discard_wednesday_draft
+          - type: grid
+            columns: 2
+            square: false
+            cards:
+              - type: entities
+                show_header_toggle: false
+                entities:
+                  - entity: number.tenko_boiler_wednesday_point_01_hour
+                    name: "01 Hour"
+              - type: entities
+                show_header_toggle: false
+                entities:
+                  - entity: number.tenko_boiler_wednesday_point_01_target_0_off
+                    name: "01 Target"
+              - type: entities
+                show_header_toggle: false
+                entities:
+                  - entity: number.tenko_boiler_wednesday_point_02_hour
+                    name: "02 Hour"
+              - type: entities
+                show_header_toggle: false
+                entities:
+                  - entity: number.tenko_boiler_wednesday_point_02_target_0_off
+                    name: "02 Target"
+              - type: entities
+                show_header_toggle: false
+                entities:
+                  - entity: number.tenko_boiler_wednesday_point_03_hour
+                    name: "03 Hour"
+              - type: entities
+                show_header_toggle: false
+                entities:
+                  - entity: number.tenko_boiler_wednesday_point_03_target_0_off
+                    name: "03 Target"
+              - type: entities
+                show_header_toggle: false
+                entities:
+                  - entity: number.tenko_boiler_wednesday_point_04_hour
+                    name: "04 Hour"
+              - type: entities
+                show_header_toggle: false
+                entities:
+                  - entity: number.tenko_boiler_wednesday_point_04_target_0_off
+                    name: "04 Target"
+              - type: entities
+                show_header_toggle: false
+                entities:
+                  - entity: number.tenko_boiler_wednesday_point_05_hour
+                    name: "05 Hour"
+              - type: entities
+                show_header_toggle: false
+                entities:
+                  - entity: number.tenko_boiler_wednesday_point_05_target_0_off
+                    name: "05 Target"
+              - type: entities
+                show_header_toggle: false
+                entities:
+                  - entity: number.tenko_boiler_wednesday_point_06_hour
+                    name: "06 Hour"
+              - type: entities
+                show_header_toggle: false
+                entities:
+                  - entity: number.tenko_boiler_wednesday_point_06_target_0_off
+                    name: "06 Target"
+              - type: entities
+                show_header_toggle: false
+                entities:
+                  - entity: number.tenko_boiler_wednesday_point_07_hour
+                    name: "07 Hour"
+              - type: entities
+                show_header_toggle: false
+                entities:
+                  - entity: number.tenko_boiler_wednesday_point_07_target_0_off
+                    name: "07 Target"
+              - type: entities
+                show_header_toggle: false
+                entities:
+                  - entity: number.tenko_boiler_wednesday_point_08_hour
+                    name: "08 Hour"
+              - type: entities
+                show_header_toggle: false
+                entities:
+                  - entity: number.tenko_boiler_wednesday_point_08_target_0_off
+                    name: "08 Target"
+              - type: entities
+                show_header_toggle: false
+                entities:
+                  - entity: number.tenko_boiler_wednesday_point_09_hour
+                    name: "09 Hour"
+              - type: entities
+                show_header_toggle: false
+                entities:
+                  - entity: number.tenko_boiler_wednesday_point_09_target_0_off
+                    name: "09 Target"
+              - type: entities
+                show_header_toggle: false
+                entities:
+                  - entity: number.tenko_boiler_wednesday_point_10_hour
+                    name: "10 Hour"
+              - type: entities
+                show_header_toggle: false
+                entities:
+                  - entity: number.tenko_boiler_wednesday_point_10_target_0_off
+                    name: "10 Target"
+      - type: grid
+        cards:
+          - type: heading
+            heading: "Thursday"
+          - type: entities
+            show_header_toggle: false
+            entities:
+              - sensor.tenko_boiler_thursday_schedule_layer
+              - sensor.tenko_boiler_thursday_schedule_validation
+              - button.tenko_boiler_apply_thursday_draft
+              - button.tenko_boiler_discard_thursday_draft
+          - type: grid
+            columns: 2
+            square: false
+            cards:
+              - type: entities
+                show_header_toggle: false
+                entities:
+                  - entity: number.tenko_boiler_thursday_point_01_hour
+                    name: "01 Hour"
+              - type: entities
+                show_header_toggle: false
+                entities:
+                  - entity: number.tenko_boiler_thursday_point_01_target_0_off
+                    name: "01 Target"
+              - type: entities
+                show_header_toggle: false
+                entities:
+                  - entity: number.tenko_boiler_thursday_point_02_hour
+                    name: "02 Hour"
+              - type: entities
+                show_header_toggle: false
+                entities:
+                  - entity: number.tenko_boiler_thursday_point_02_target_0_off
+                    name: "02 Target"
+              - type: entities
+                show_header_toggle: false
+                entities:
+                  - entity: number.tenko_boiler_thursday_point_03_hour
+                    name: "03 Hour"
+              - type: entities
+                show_header_toggle: false
+                entities:
+                  - entity: number.tenko_boiler_thursday_point_03_target_0_off
+                    name: "03 Target"
+              - type: entities
+                show_header_toggle: false
+                entities:
+                  - entity: number.tenko_boiler_thursday_point_04_hour
+                    name: "04 Hour"
+              - type: entities
+                show_header_toggle: false
+                entities:
+                  - entity: number.tenko_boiler_thursday_point_04_target_0_off
+                    name: "04 Target"
+              - type: entities
+                show_header_toggle: false
+                entities:
+                  - entity: number.tenko_boiler_thursday_point_05_hour
+                    name: "05 Hour"
+              - type: entities
+                show_header_toggle: false
+                entities:
+                  - entity: number.tenko_boiler_thursday_point_05_target_0_off
+                    name: "05 Target"
+              - type: entities
+                show_header_toggle: false
+                entities:
+                  - entity: number.tenko_boiler_thursday_point_06_hour
+                    name: "06 Hour"
+              - type: entities
+                show_header_toggle: false
+                entities:
+                  - entity: number.tenko_boiler_thursday_point_06_target_0_off
+                    name: "06 Target"
+              - type: entities
+                show_header_toggle: false
+                entities:
+                  - entity: number.tenko_boiler_thursday_point_07_hour
+                    name: "07 Hour"
+              - type: entities
+                show_header_toggle: false
+                entities:
+                  - entity: number.tenko_boiler_thursday_point_07_target_0_off
+                    name: "07 Target"
+              - type: entities
+                show_header_toggle: false
+                entities:
+                  - entity: number.tenko_boiler_thursday_point_08_hour
+                    name: "08 Hour"
+              - type: entities
+                show_header_toggle: false
+                entities:
+                  - entity: number.tenko_boiler_thursday_point_08_target_0_off
+                    name: "08 Target"
+              - type: entities
+                show_header_toggle: false
+                entities:
+                  - entity: number.tenko_boiler_thursday_point_09_hour
+                    name: "09 Hour"
+              - type: entities
+                show_header_toggle: false
+                entities:
+                  - entity: number.tenko_boiler_thursday_point_09_target_0_off
+                    name: "09 Target"
+              - type: entities
+                show_header_toggle: false
+                entities:
+                  - entity: number.tenko_boiler_thursday_point_10_hour
+                    name: "10 Hour"
+              - type: entities
+                show_header_toggle: false
+                entities:
+                  - entity: number.tenko_boiler_thursday_point_10_target_0_off
+                    name: "10 Target"
+      - type: grid
+        cards:
+          - type: heading
+            heading: "Friday"
+          - type: entities
+            show_header_toggle: false
+            entities:
+              - sensor.tenko_boiler_friday_schedule_layer
+              - sensor.tenko_boiler_friday_schedule_validation
+              - button.tenko_boiler_apply_friday_draft
+              - button.tenko_boiler_discard_friday_draft
+          - type: grid
+            columns: 2
+            square: false
+            cards:
+              - type: entities
+                show_header_toggle: false
+                entities:
+                  - entity: number.tenko_boiler_friday_point_01_hour
+                    name: "01 Hour"
+              - type: entities
+                show_header_toggle: false
+                entities:
+                  - entity: number.tenko_boiler_friday_point_01_target_0_off
+                    name: "01 Target"
+              - type: entities
+                show_header_toggle: false
+                entities:
+                  - entity: number.tenko_boiler_friday_point_02_hour
+                    name: "02 Hour"
+              - type: entities
+                show_header_toggle: false
+                entities:
+                  - entity: number.tenko_boiler_friday_point_02_target_0_off
+                    name: "02 Target"
+              - type: entities
+                show_header_toggle: false
+                entities:
+                  - entity: number.tenko_boiler_friday_point_03_hour
+                    name: "03 Hour"
+              - type: entities
+                show_header_toggle: false
+                entities:
+                  - entity: number.tenko_boiler_friday_point_03_target_0_off
+                    name: "03 Target"
+              - type: entities
+                show_header_toggle: false
+                entities:
+                  - entity: number.tenko_boiler_friday_point_04_hour
+                    name: "04 Hour"
+              - type: entities
+                show_header_toggle: false
+                entities:
+                  - entity: number.tenko_boiler_friday_point_04_target_0_off
+                    name: "04 Target"
+              - type: entities
+                show_header_toggle: false
+                entities:
+                  - entity: number.tenko_boiler_friday_point_05_hour
+                    name: "05 Hour"
+              - type: entities
+                show_header_toggle: false
+                entities:
+                  - entity: number.tenko_boiler_friday_point_05_target_0_off
+                    name: "05 Target"
+              - type: entities
+                show_header_toggle: false
+                entities:
+                  - entity: number.tenko_boiler_friday_point_06_hour
+                    name: "06 Hour"
+              - type: entities
+                show_header_toggle: false
+                entities:
+                  - entity: number.tenko_boiler_friday_point_06_target_0_off
+                    name: "06 Target"
+              - type: entities
+                show_header_toggle: false
+                entities:
+                  - entity: number.tenko_boiler_friday_point_07_hour
+                    name: "07 Hour"
+              - type: entities
+                show_header_toggle: false
+                entities:
+                  - entity: number.tenko_boiler_friday_point_07_target_0_off
+                    name: "07 Target"
+              - type: entities
+                show_header_toggle: false
+                entities:
+                  - entity: number.tenko_boiler_friday_point_08_hour
+                    name: "08 Hour"
+              - type: entities
+                show_header_toggle: false
+                entities:
+                  - entity: number.tenko_boiler_friday_point_08_target_0_off
+                    name: "08 Target"
+              - type: entities
+                show_header_toggle: false
+                entities:
+                  - entity: number.tenko_boiler_friday_point_09_hour
+                    name: "09 Hour"
+              - type: entities
+                show_header_toggle: false
+                entities:
+                  - entity: number.tenko_boiler_friday_point_09_target_0_off
+                    name: "09 Target"
+              - type: entities
+                show_header_toggle: false
+                entities:
+                  - entity: number.tenko_boiler_friday_point_10_hour
+                    name: "10 Hour"
+              - type: entities
+                show_header_toggle: false
+                entities:
+                  - entity: number.tenko_boiler_friday_point_10_target_0_off
+                    name: "10 Target"
+      - type: grid
+        cards:
+          - type: heading
+            heading: "Saturday"
+          - type: entities
+            show_header_toggle: false
+            entities:
+              - sensor.tenko_boiler_saturday_schedule_layer
+              - sensor.tenko_boiler_saturday_schedule_validation
+              - button.tenko_boiler_apply_saturday_draft
+              - button.tenko_boiler_discard_saturday_draft
+          - type: grid
+            columns: 2
+            square: false
+            cards:
+              - type: entities
+                show_header_toggle: false
+                entities:
+                  - entity: number.tenko_boiler_saturday_point_01_hour
+                    name: "01 Hour"
+              - type: entities
+                show_header_toggle: false
+                entities:
+                  - entity: number.tenko_boiler_saturday_point_01_target_0_off
+                    name: "01 Target"
+              - type: entities
+                show_header_toggle: false
+                entities:
+                  - entity: number.tenko_boiler_saturday_point_02_hour
+                    name: "02 Hour"
+              - type: entities
+                show_header_toggle: false
+                entities:
+                  - entity: number.tenko_boiler_saturday_point_02_target_0_off
+                    name: "02 Target"
+              - type: entities
+                show_header_toggle: false
+                entities:
+                  - entity: number.tenko_boiler_saturday_point_03_hour
+                    name: "03 Hour"
+              - type: entities
+                show_header_toggle: false
+                entities:
+                  - entity: number.tenko_boiler_saturday_point_03_target_0_off
+                    name: "03 Target"
+              - type: entities
+                show_header_toggle: false
+                entities:
+                  - entity: number.tenko_boiler_saturday_point_04_hour
+                    name: "04 Hour"
+              - type: entities
+                show_header_toggle: false
+                entities:
+                  - entity: number.tenko_boiler_saturday_point_04_target_0_off
+                    name: "04 Target"
+              - type: entities
+                show_header_toggle: false
+                entities:
+                  - entity: number.tenko_boiler_saturday_point_05_hour
+                    name: "05 Hour"
+              - type: entities
+                show_header_toggle: false
+                entities:
+                  - entity: number.tenko_boiler_saturday_point_05_target_0_off
+                    name: "05 Target"
+              - type: entities
+                show_header_toggle: false
+                entities:
+                  - entity: number.tenko_boiler_saturday_point_06_hour
+                    name: "06 Hour"
+              - type: entities
+                show_header_toggle: false
+                entities:
+                  - entity: number.tenko_boiler_saturday_point_06_target_0_off
+                    name: "06 Target"
+              - type: entities
+                show_header_toggle: false
+                entities:
+                  - entity: number.tenko_boiler_saturday_point_07_hour
+                    name: "07 Hour"
+              - type: entities
+                show_header_toggle: false
+                entities:
+                  - entity: number.tenko_boiler_saturday_point_07_target_0_off
+                    name: "07 Target"
+              - type: entities
+                show_header_toggle: false
+                entities:
+                  - entity: number.tenko_boiler_saturday_point_08_hour
+                    name: "08 Hour"
+              - type: entities
+                show_header_toggle: false
+                entities:
+                  - entity: number.tenko_boiler_saturday_point_08_target_0_off
+                    name: "08 Target"
+              - type: entities
+                show_header_toggle: false
+                entities:
+                  - entity: number.tenko_boiler_saturday_point_09_hour
+                    name: "09 Hour"
+              - type: entities
+                show_header_toggle: false
+                entities:
+                  - entity: number.tenko_boiler_saturday_point_09_target_0_off
+                    name: "09 Target"
+              - type: entities
+                show_header_toggle: false
+                entities:
+                  - entity: number.tenko_boiler_saturday_point_10_hour
+                    name: "10 Hour"
+              - type: entities
+                show_header_toggle: false
+                entities:
+                  - entity: number.tenko_boiler_saturday_point_10_target_0_off
+                    name: "10 Target"
+      - type: grid
+        cards:
+          - type: heading
+            heading: "Sunday"
+          - type: entities
+            show_header_toggle: false
+            entities:
+              - sensor.tenko_boiler_sunday_schedule_layer
+              - sensor.tenko_boiler_sunday_schedule_validation
+              - button.tenko_boiler_apply_sunday_draft
+              - button.tenko_boiler_discard_sunday_draft
+          - type: grid
+            columns: 2
+            square: false
+            cards:
+              - type: entities
+                show_header_toggle: false
+                entities:
+                  - entity: number.tenko_boiler_sunday_point_01_hour
+                    name: "01 Hour"
+              - type: entities
+                show_header_toggle: false
+                entities:
+                  - entity: number.tenko_boiler_sunday_point_01_target_0_off
+                    name: "01 Target"
+              - type: entities
+                show_header_toggle: false
+                entities:
+                  - entity: number.tenko_boiler_sunday_point_02_hour
+                    name: "02 Hour"
+              - type: entities
+                show_header_toggle: false
+                entities:
+                  - entity: number.tenko_boiler_sunday_point_02_target_0_off
+                    name: "02 Target"
+              - type: entities
+                show_header_toggle: false
+                entities:
+                  - entity: number.tenko_boiler_sunday_point_03_hour
+                    name: "03 Hour"
+              - type: entities
+                show_header_toggle: false
+                entities:
+                  - entity: number.tenko_boiler_sunday_point_03_target_0_off
+                    name: "03 Target"
+              - type: entities
+                show_header_toggle: false
+                entities:
+                  - entity: number.tenko_boiler_sunday_point_04_hour
+                    name: "04 Hour"
+              - type: entities
+                show_header_toggle: false
+                entities:
+                  - entity: number.tenko_boiler_sunday_point_04_target_0_off
+                    name: "04 Target"
+              - type: entities
+                show_header_toggle: false
+                entities:
+                  - entity: number.tenko_boiler_sunday_point_05_hour
+                    name: "05 Hour"
+              - type: entities
+                show_header_toggle: false
+                entities:
+                  - entity: number.tenko_boiler_sunday_point_05_target_0_off
+                    name: "05 Target"
+              - type: entities
+                show_header_toggle: false
+                entities:
+                  - entity: number.tenko_boiler_sunday_point_06_hour
+                    name: "06 Hour"
+              - type: entities
+                show_header_toggle: false
+                entities:
+                  - entity: number.tenko_boiler_sunday_point_06_target_0_off
+                    name: "06 Target"
+              - type: entities
+                show_header_toggle: false
+                entities:
+                  - entity: number.tenko_boiler_sunday_point_07_hour
+                    name: "07 Hour"
+              - type: entities
+                show_header_toggle: false
+                entities:
+                  - entity: number.tenko_boiler_sunday_point_07_target_0_off
+                    name: "07 Target"
+              - type: entities
+                show_header_toggle: false
+                entities:
+                  - entity: number.tenko_boiler_sunday_point_08_hour
+                    name: "08 Hour"
+              - type: entities
+                show_header_toggle: false
+                entities:
+                  - entity: number.tenko_boiler_sunday_point_08_target_0_off
+                    name: "08 Target"
+              - type: entities
+                show_header_toggle: false
+                entities:
+                  - entity: number.tenko_boiler_sunday_point_09_hour
+                    name: "09 Hour"
+              - type: entities
+                show_header_toggle: false
+                entities:
+                  - entity: number.tenko_boiler_sunday_point_09_target_0_off
+                    name: "09 Target"
+              - type: entities
+                show_header_toggle: false
+                entities:
+                  - entity: number.tenko_boiler_sunday_point_10_hour
+                    name: "10 Hour"
+              - type: entities
+                show_header_toggle: false
+                entities:
+                  - entity: number.tenko_boiler_sunday_point_10_target_0_off
+                    name: "10 Target"
