@@ -13,7 +13,8 @@ MARKER = "  # Generated Schedule view"
 def entity_id(key):
     entity = BY_KEY[key]
     name = re.sub(r"[^a-z0-9]+", "_", entity.name.lower()).strip("_")
-    return f"{entity.kind}.tenko_boiler_{name}"
+    prefix = "tenko_boiler_energy_meter" if entity.energy_device else "tenko_boiler"
+    return f"{entity.kind}.{prefix}_{name}"
 
 
 def schedule_view():

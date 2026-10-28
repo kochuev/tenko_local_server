@@ -8,10 +8,26 @@ import threading
 import time
 from pathlib import Path
 
-from .protocol import parse_report, serialize, validate_setting
+from .protocol import THERMOSTAT_COMMANDS, parse_report, serialize, validate_setting
 from .schedule_editor import edit, new_editor
 
 LOG = logging.getLogger(__name__)
+
+
+def validate_pending_temperature(reported, pending):
+    if "TMP" not in pending:
+        return
+    value = pending["TMP"]
+    try:
+        validate_setting("TMP", value)
+    except ValueError:
+        original = reported.get("TMP")
+        # Turning off must remain possible without inventing a replacement
+        # for an out-of-range target received from older boiler firmware.
+        if (isinstance(value, list) and len(value) == 2 and value[0] == "Off"
+                and isinstance(original, list) and len(original) == 2 and value[1] == original[1]):
+            return
+        raise
 
 
 class Store:
@@ -89,7 +105,7 @@ class Store:
             record.update(report=report, last_report=now)
             record["revision"] += 1
             if report["stage_conflict"]:
-                LOG.warning("%s: ST1/ST2 disagree with STU", raw["sn"])
+                LOG.warning("%s: ST1/ST2 disagree with STU; using STU", raw["sn"])
             if report["parse_errors"]:
                 LOG.warning("%s: malformed report: %s", raw["sn"], report["parse_errors"])
                 self._write(record)
@@ -107,6 +123,7 @@ class Store:
             if record["pending"]:
                 complete = {**report["settings"], **record["pending"]}
                 try:
+                    validate_pending_temperature(report["settings"], record["pending"])
                     response = serialize(complete)
                     record["attempts"] += 1
                     if record["sent_at"] is None:
@@ -149,6 +166,7 @@ class Store:
         if not record["report"] or record["report"]["parse_errors"]:
             raise ValueError("A valid parameter report is required before setting controls")
         candidate = {**record["report"]["settings"], **record["pending"], **patch}
+        validate_pending_temperature(record["report"]["settings"], {**record["pending"], **patch})
         serialize(candidate)
         record.update(pending={**record["pending"], **patch}, sent_at=None,
                       queued_at=time.time(), attempts=0, command_state="pending", command_error=None)
@@ -168,6 +186,24 @@ class Store:
                 updated = copy.deepcopy(settings[key])
                 updated[index] = value
             return self.command(serial, {key: updated})
+
+    def thermostat_command(self, serial, command, value):
+        key, index = THERMOSTAT_COMMANDS[command]
+        if index != 0:
+            return self.component_command(serial, key, index, value)
+        enabled_mode = "heat" if key == "TMP" else "heat_cool"
+        if value not in ("off", enabled_mode):
+            raise ValueError(f"Thermostat mode must be off or {enabled_mode}")
+        with self.lock:
+            record = self._read(serial)
+            settings = {**record.get("report", {}).get("settings", {}), **record["pending"]}
+            if key not in settings:
+                raise ValueError(f"No reported {key}; wait for a valid parameter report")
+            updated = copy.deepcopy(settings[key])
+            updated[0] = "Off" if value == "off" else "On"
+            if value != "off":
+                updated = validate_setting(key, updated)
+            return self._queue(record, {key: updated})
 
     def editor_command(self, serial, action, payload):
         with self.lock:

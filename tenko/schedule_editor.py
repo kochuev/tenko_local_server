@@ -57,10 +57,6 @@ def editor_state(record):
         values[f"schedule_{day}_layer"] = info["layer"]
         values[f"schedule_{day}_validation"] = (
             "invalid" if info["validation_error"] else "valid") if info["displayed_points"] else "no data"
-    values.update(
-        stage_resolution_source=record.get("schedule_editor", new_editor())["stage_source"],
-        resolve_stages="ready" if record.get("report", {}).get("stage_conflict") else None,
-    )
     return values
 
 
@@ -87,18 +83,6 @@ def edit(record, action, payload):
         if selected[slot][component] != value:
             selected[slot][component] = value
             return {day: selected}
-    elif action == "stage_resolution_source":
-        if payload not in ("ST1/ST2", "STU"):
-            raise ValueError("Choose ST1/ST2 or STU as the duplicate resolution source")
-        record.setdefault("schedule_editor", new_editor())["stage_source"] = payload
-    elif action == "resolve_stages":
-        report = record.get("report", {})
-        if not report.get("stage_conflict"):
-            raise ValueError("There is no reported duplicate-stage conflict")
-        decoded = report["decoded"]
-        source = record.get("schedule_editor", new_editor())["stage_source"]
-        flags = [decoded["ST1"][0], decoded["ST2"][0]] if source == "ST1/ST2" else decoded["STU"]
-        return {"STU": validate_setting("STU", flags)}
     else:
         raise ValueError(f"Unknown schedule action: {action}")
     return None

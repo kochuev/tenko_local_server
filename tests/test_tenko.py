@@ -13,7 +13,7 @@ from urllib.parse import urlencode
 
 from examples.generate_dashboard import MARKER, entity_id, schedule_view
 from tenko.config import Config
-from tenko.entities import BY_KEY, ENTITIES, REMOVED_ENTITIES, discovery, state
+from tenko.entities import BY_KEY, ENTITIES, REMOVED_ENTITIES, discovery, enabled_entities, state
 from tenko.mqtt import Bridge
 from tenko.protocol import ORDER, SCHEDULES, form, parse_report, serialize, validate_setting
 from tenko.server import create_server
@@ -116,13 +116,12 @@ class ProtocolTests(unittest.TestCase):
             with self.subTest(value=value), self.assertRaises(ValueError):
                 validate_setting("ED", value)
 
-    def test_duplicate_stage_conflict_has_no_silent_winner(self):
+    def test_duplicate_stage_conflict_uses_stu(self):
         self.raw["STU"] = "[On,Off]"
         report = parse_report(self.raw)
         self.assertTrue(report["stage_conflict"])
-        self.assertNotIn("STU", report["settings"])
-        with self.assertRaises(ValueError):
-            serialize(report["settings"])
+        self.assertEqual(report["settings"]["STU"], ["On", "Off"])
+        self.assertIn(";STU=On,Off;", serialize(report["settings"]))
 
     def test_unknown_flags_not_sent_as_controls(self):
         for key, value in (("MOD", "Err,Off,0,3"), ("USE", "unverified"), ("FI", "[Err,5]")):
@@ -234,7 +233,7 @@ class StoreTests(unittest.TestCase):
             with self.subTest(command_state=snapshot["command_state"]):
                 values = state(snapshot)
                 self.assertEqual({key: values[key] for key in expected}, expected)
-                self.assertEqual(values["heating_on"], "Off")
+                self.assertEqual(values["modulated_power"], 0 if snapshot["command_state"] == "pending" else None)
         record, _ = self.store.report({**confirmed_raw, "TMP": "[On,22.0]"})
         self.assertEqual(state(record)["constant_target"], 22)
 
@@ -248,6 +247,21 @@ class StoreTests(unittest.TestCase):
         self.assertEqual(state(record)["constant_target"], 22)
         self.assertEqual(record["report"]["settings"]["TMP"][1], 21)
         self.assertEqual(record["command_state"], "pending")
+
+    def test_out_of_range_legacy_pending_target_is_not_retransmitted(self):
+        self.store.close()
+        data = json.loads(self.path.read_text())
+        data[self.serial].update(pending={"TMP": ["Off", 40]}, queued_at=time.time(),
+                                 command_state="pending", sent_at=None)
+        self.path.write_text(json.dumps(data))
+        self.store = Store(self.path)
+        record, response = self.store.report(self.raw)
+        self.assertEqual(response, "nochange")
+        self.assertEqual(record["command_state"], "error")
+        self.assertIn("7..30", record["command_error"])
+        self.store.thermostat_command(self.serial, "constant_target", "30")
+        _, response = self.store.report(self.raw)
+        self.assertIn(";TMP=Off,30.0;", response)
 
     def test_atomic_write_failure_keeps_previous_file_and_memory(self):
         before = self.path.read_text()
@@ -281,22 +295,26 @@ class StoreTests(unittest.TestCase):
     def test_separate_status_never_overwrites_modulation(self):
         record = self.store.status({"sn": self.serial, "status": "1"})
         self.assertNotIn("status_heating", state(record))
-        self.assertEqual(state(record)["heating_on"], "Off")
+        self.assertEqual(state(record)["modulated_power"], 0)
         record = self.store.status({"sn": self.serial, "status": "9"})
         self.assertNotIn("status_heating", state(record))
         self.assertEqual(record["status"], "9")
 
-    def test_duplicate_flags_require_explicit_resolution(self):
+    def test_duplicate_flags_are_logged_and_stu_stays_authoritative(self):
         raw = {**self.raw, "STU": "[On,Off]"}
-        self.store.report(raw)
-        with self.assertRaises(ValueError):
-            self.store.command(self.serial, {"MOD": "Off"})
+        with self.assertLogs("tenko.store", level="WARNING") as logs:
+            self.store.report(raw)
+        self.assertIn("using STU", "\n".join(logs.output))
+        record = self.store.command(self.serial, {"MOD": "Off"})
+        self.assertEqual(state(record)["manual_1"], "On")
+        self.assertEqual(state(record)["manual_2"], "Off")
         record = self.store.command(self.serial, {"STU": ["On", "Off"]})
         self.assertEqual(record["pending"]["STU"], ["On", "Off"])
         _, response = self.store.report(raw)
         self.assertIn(";STU=On,Off;", response)
         self.assertEqual(self.store.get(self.serial)["command_state"], "pending")
         self.store.report({**raw, "ST1": "On,5.0"})
+        self.store.report({**raw, "MOD": "Off,Off,0,3"})
         self.assertEqual(self.store.get(self.serial)["command_state"], "applied")
 
 
@@ -439,13 +457,17 @@ class MQTTTests(unittest.TestCase):
 
     def test_all_entities_have_values_and_stable_unique_ids(self):
         values = state(self.record)
-        self.assertEqual(set(values), set(BY_KEY))
+        self.assertTrue(set(BY_KEY) <= set(values))
         identifiers = []
         for entity in ENTITIES:
             payload = discovery(entity, self.serial, "8.2w1.2", self.config)
             identifiers.append(payload["unique_id"])
-            self.assertEqual(payload["device"]["name"], "Tenko Boiler")
-            self.assertEqual(payload["device"]["identifiers"], [f"tenko_{self.serial}"])
+            if entity.energy_device:
+                self.assertEqual(payload["device"]["name"], "TENKO Boiler Energy Meter")
+                self.assertEqual(payload["device"]["via_device"], f"tenko_{self.serial}")
+            else:
+                self.assertEqual(payload["device"]["name"], "Tenko Boiler")
+                self.assertEqual(payload["device"]["identifiers"], [f"tenko_{self.serial}"])
             if entity.setting or entity.action:
                 self.assertTrue(payload["command_topic"].endswith(f"/command/{entity.key}"))
             self.assertNotIn("configuration_url", payload["device"])
@@ -453,7 +475,7 @@ class MQTTTests(unittest.TestCase):
                 self.assertEqual(payload["payload_press"], "PRESS")
                 self.assertNotIn("state_topic", payload)
                 self.assertNotIn("optimistic", payload)
-            if entity.unit == "kWh":
+            if entity.unit == "kWh" and not entity.energy_device:
                 self.assertNotIn("state_class", payload)
                 self.assertNotIn("device_class", payload)
             if "capacity" in entity.key:
@@ -498,7 +520,7 @@ class MQTTTests(unittest.TestCase):
         self.bridge.on_message(None, None, SimpleNamespace(
             topic="homeassistant/status", payload=b"online", retain=False))
         configs = [topic for topic, payload in self.messages if topic.endswith("/config") and payload]
-        self.assertEqual(len(configs), len(ENTITIES))
+        self.assertEqual(len(configs), len(enabled_entities(self.config)))
         for kind, key in REMOVED_ENTITIES:
             self.assertIn((f"homeassistant/{kind}/tenko_{self.serial}/{key}/config", ""), self.messages)
 
@@ -543,7 +565,7 @@ class MQTTTests(unittest.TestCase):
             topic=f"tenko/{self.serial}/command/schedule_MO_01_hour", payload=b"1", retain=True))
         self.assertEqual(self.store.get(self.serial)["pending"], {})
 
-    def test_native_button_requires_press_payload(self):
+    def test_removed_conflict_button_is_rejected(self):
         self.store.command(self.serial, {"MOD": "Off"})
         self.bridge.on_message(None, None, SimpleNamespace(
             topic=f"tenko/{self.serial}/command/resolve_stages", payload=b"Off", retain=False))
@@ -585,17 +607,127 @@ class MQTTTests(unittest.TestCase):
     def test_heating_states_use_plain_on_off_without_heat_device_class(self):
         self.store.report({**self.raw, "TEN1": "On", "TEN2": "Off", "MOD": "On,On,1,3"})
         values = state(self.store.get(self.serial))
-        for key, expected in (("ten_1_on", "On"), ("ten_2_on", "Off"), ("heating_on", "On")):
+        for key, expected in (("ten_1_on", "On"), ("ten_2_on", "Off")):
             with self.subTest(key=key):
                 payload = discovery(BY_KEY[key], self.serial, None, self.config)
                 self.assertNotIn("device_class", payload)
                 self.assertEqual(payload["payload_on"], "On")
                 self.assertEqual(payload["payload_off"], "Off")
                 self.assertEqual(values[key], expected)
-        for key in ("ten_1", "ten_2", "ten_1_on", "ten_2_on"):
+        for key in ("ten_1_on", "ten_2_on"):
             self.assertIn("Heating element", BY_KEY[key].name)
         self.assertNotIn("status_heating", BY_KEY)
         self.assertIn(("binary_sensor", "status_heating"), REMOVED_ENTITIES)
+
+    def test_constant_thermostat_has_validated_target_and_mode_commands(self):
+        climate = discovery(BY_KEY["constant_thermostat"], self.serial, None, self.config)
+        self.assertEqual(climate["modes"], ["off", "heat"])
+        self.assertEqual((climate["min_temp"], climate["max_temp"], climate["temp_step"]), (7, 30, .1))
+        self.assertNotIn("state_topic", climate)
+        self.assertNotIn("value_template", climate)
+        self.assertTrue(climate["mode_command_topic"].endswith("/command/constant_mode"))
+        with self.assertRaises(ValueError):
+            self.store.thermostat_command(self.serial, "constant_mode", "heat")
+        for invalid in ("6.9", "30.1", "40", "7.01", "nan"):
+            with self.subTest(target=invalid), self.assertRaises(ValueError):
+                self.store.thermostat_command(self.serial, "constant_target", invalid)
+        for valid in ("7", "30", "20.1"):
+            self.bridge.on_message(None, None, SimpleNamespace(
+                topic=f"tenko/{self.serial}/command/constant_target", payload=valid.encode(), retain=False))
+            self.assertEqual(state(self.store.get(self.serial))["constant_target"], float(valid))
+        self.bridge.on_message(None, None, SimpleNamespace(
+            topic=f"tenko/{self.serial}/command/constant_mode", payload=b"heat", retain=False))
+        self.assertEqual(self.store.get(self.serial)["pending"]["TMP"], ["On", 20.1])
+        self.assertEqual(state(self.store.get(self.serial))["constant_thermostat"], "heat")
+        self.store.thermostat_command(self.serial, "constant_mode", "off")
+        self.assertEqual(self.store.get(self.serial)["pending"]["TMP"], ["Off", 20.1])
+
+    def test_thermostat_can_turn_off_without_rewriting_invalid_legacy_target(self):
+        self.store.report({**self.raw, "TMP": "On,6.9"})
+        record = self.store.thermostat_command(self.serial, "constant_mode", "off")
+        self.assertEqual(record["pending"]["TMP"], ["Off", 6.9])
+        self.assertEqual(state(record)["constant_thermostat"], "off")
+        self.assertIsNone(state(record)["constant_target"])
+        self.assertEqual(record["report"]["settings"]["TMP"], ["On", 6.9])
+        _, response = self.store.report({**self.raw, "TMP": "On,6.9"})
+        self.assertIn(";TMP=Off,6.9;", response)
+
+    def test_minimum_temperature_thermostat_uses_two_setpoints_and_own_enable(self):
+        climate = discovery(BY_KEY["minimum_thermostat"], self.serial, None, self.config)
+        self.assertEqual(climate["modes"], ["off", "heat_cool"])
+        self.assertTrue(climate["temperature_low_command_topic"].endswith("/command/minimum_low"))
+        self.assertTrue(climate["temperature_high_command_topic"].endswith("/command/minimum_high"))
+        self.store.thermostat_command(self.serial, "minimum_low", "8")
+        self.store.thermostat_command(self.serial, "minimum_high", "12")
+        record = self.store.thermostat_command(self.serial, "minimum_mode", "off")
+        self.assertEqual(record["pending"]["PMT"], ["Off", 8, 12])
+        record = self.store.thermostat_command(self.serial, "minimum_mode", "heat_cool")
+        self.assertEqual(record["pending"]["PMT"], ["On", 8, 12])
+        self.assertEqual(state(record)["minimum_thermostat"], "heat_cool")
+        for key, value in (("minimum_low", "12"), ("minimum_high", "8"),
+                           ("minimum_low", "16"), ("minimum_high", "18"), ("minimum_low", "8.5")):
+            with self.subTest(key=key, value=value), self.assertRaises(ValueError):
+                self.store.thermostat_command(self.serial, key, value)
+
+    def test_modulated_power_matches_requested_cases_and_invalid_counts(self):
+        for raw, expected in (
+            ("On,Off,1,3", 0), ("On,On,1,3", 33), ("On,On,2,3", 66),
+            ("Off,Off,1,3", None), ("Off,On,1,3", None), ("On,On,3,3", 100),
+            ("On,On,0,3", 0), ("On,On,1,0", None), ("On,On,4,3", None),
+            ("On,On,-1,3", None), ("On,On,1.5,3", None), ("On,Err,1,3", None),
+        ):
+            with self.subTest(raw=raw):
+                record, _ = self.store.report({**self.raw, "MOD": raw})
+                self.assertEqual(state(record)["modulated_power"], expected)
+        payload = discovery(BY_KEY["modulated_power"], self.serial, None, self.config)
+        self.assertEqual(payload["unit_of_measurement"], "%")
+        self.assertEqual(len(payload["availability"]), 2)
+        self.assertNotIn("heating_on", BY_KEY)
+        self.assertNotIn("heating", BY_KEY)
+
+    def test_operational_sensor_names_categories_and_clock_time(self):
+        for key, name in (("frost", "AF-5"), ("error", "Error Code"), ("clock", "Boiler clock"), ("pump", "Pump state")):
+            self.assertEqual(BY_KEY[key].name, name)
+            self.assertIsNone(BY_KEY[key].category)
+        self.assertEqual(state(self.record)["clock"], "19:23")
+        record, _ = self.store.report({**self.raw, "TIM": "[0,5,4,28,10,26]"})
+        self.assertEqual(state(record)["clock"], "00:05")
+        record, _ = self.store.report({**self.raw, "TIM": "[24,0,4,28,10,26]"})
+        self.assertIsNone(state(record)["clock"])
+        self.assertEqual(BY_KEY["modulation"].name, "Power Modulation Mode")
+        for entity in ENTITIES:
+            if entity.setting or entity.action or entity.kind == "climate":
+                self.assertEqual(entity.category, "config" if entity.key.startswith("schedule_") else None)
+
+    def test_energy_sensor_has_linked_device_and_direct_period_value(self):
+        payload = discovery(BY_KEY["period_amount"], self.serial, None, self.config)
+        self.assertEqual(payload["device"]["name"], "TENKO Boiler Energy Meter")
+        self.assertEqual(payload["device"]["via_device"], f"tenko_{self.serial}")
+        self.assertEqual(payload["device_class"], "energy")
+        self.assertEqual(payload["unit_of_measurement"], "kWh")
+        self.assertNotIn("state_class", payload)
+        self.assertEqual(state(self.record)["period_amount"], self.record["report"]["decoded"]["STA"][1])
+        self.assertEqual(payload["unique_id"], f"tenko_{self.serial}_period_amount")
+        for key in ("statistics_days", "day_amount", "week_amount", "month_0", "month_11"):
+            self.assertTrue(BY_KEY[key].debug_only)
+
+    def test_debug_discovery_and_retained_data_are_removed_when_debug_is_off(self):
+        for level in ("DEBUG", "INFO"):
+            self.bridge.config = Config(log_level=level)
+            self.messages.clear()
+            self.bridge.emit(self.serial, discover=True)
+            for entity in ENTITIES:
+                topic = f"homeassistant/{entity.kind}/tenko_{self.serial}/{entity.key}/config"
+                payload = next(payload for name, payload in self.messages if name == topic)
+                self.assertEqual(bool(payload), not entity.debug_only or level == "DEBUG")
+            values = next(payload for name, payload in self.messages if name == f"tenko/{self.serial}/state")
+            self.assertEqual("day_amount" in values, level == "DEBUG")
+            self.assertEqual("month_0" in values, level == "DEBUG")
+            self.assertIn("period_amount", values)
+            self.assertIn("constant_thermostat", values)
+            diagnostics = next(payload for name, payload in self.messages if name == f"tenko/{self.serial}/diagnostics")
+            self.assertEqual(bool(diagnostics), level == "DEBUG")
+        self.assertFalse(any(entity.category == "diagnostic" for entity in enabled_entities(Config())))
 
 
 class ConfigTests(unittest.TestCase):
@@ -629,6 +761,14 @@ class ConfigTests(unittest.TestCase):
 
 
 class DashboardTests(unittest.TestCase):
+    def test_boiler_cards_use_thermostats_and_linked_energy_device(self):
+        dashboard = (ROOT / "examples/home-assistant.yaml").read_text().split(MARKER)[0]
+        self.assertEqual(dashboard.count("- type: thermostat"), 2)
+        for key in ("constant_thermostat", "minimum_thermostat", "period_amount", "modulated_power"):
+            self.assertIn(entity_id(key), dashboard)
+        self.assertNotIn("modulation_heating", dashboard)
+        self.assertNotIn("constant_temperature_enabled", dashboard)
+
     def test_schedule_view_is_up_to_date_and_has_all_individual_inputs(self):
         dashboard = (ROOT / "examples/home-assistant.yaml").read_text()
         self.assertEqual(MARKER + dashboard.split(MARKER)[1], schedule_view() + "\n")
@@ -830,11 +970,12 @@ class NativeEditorTests(unittest.TestCase):
                 self.edit("schedule_MO_01_hour", "1")
         self.assertEqual(self.store.get(self.serial), before)
 
-    def test_native_resolution_of_stage_duplicate_conflict(self):
+    def test_stage_conflict_resolution_controls_are_removed(self):
         self.store.report({**self.raw, "STU": "[On,Off]"})
-        self.edit("stage_resolution_source", "STU")
-        record = self.edit("resolve_stages")
-        self.assertEqual(record["pending"]["STU"], ["On", "Off"])
+        with self.assertRaises(ValueError):
+            self.edit("stage_resolution_source", "STU")
+        record = self.store.get(self.serial)
+        self.assertEqual(record["report"]["settings"]["STU"], ["On", "Off"])
 
 
 if __name__ == "__main__":

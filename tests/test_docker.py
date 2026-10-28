@@ -15,6 +15,14 @@ import paho.mqtt.client as mqtt
 from tenko.protocol import form, parse_report
 
 ROOT = Path(__file__).resolve().parents[1]
+OBSOLETE_DISCOVERY = (
+    ("button", "cancel_pending"), ("button", "editor_apply_all"),
+    ("number", "schedule_MO_01_hour"), ("binary_sensor", "status_heating"),
+    ("binary_sensor", "heating_on"), ("switch", "constant_enabled"),
+    ("number", "constant_target"), ("switch", "pmt_enabled"),
+    ("number", "pmt_min"), ("number", "pmt_max"),
+    ("select", "stage_resolution_source"), ("button", "resolve_stages"),
+)
 
 
 @unittest.skipUnless(os.environ.get("TENKO_DOCKER_TESTS") == "1", "Opt-in Docker/MQTT integration check")
@@ -61,19 +69,21 @@ class DockerFlowTests(unittest.TestCase):
                     " && exec mosquitto -c /mosquitto/config/mosquitto.conf")
         self.connect_observer()
         self.client.publish("tenko/211229_005/command/modulation", "Off", qos=1, retain=True).wait_for_publish(3)
-        for kind, key in (("button", "cancel_pending"), ("button", "editor_apply_all"),
-                          ("number", "schedule_MO_01_hour"), ("binary_sensor", "status_heating")):
+        for kind, key in OBSOLETE_DISCOVERY:
             self.client.publish(f"homeassistant/{kind}/tenko_211229_005/{key}/config",
                                 '{"name":"Obsolete control"}', qos=1, retain=True).wait_for_publish(3)
-        self.docker("run", "-d", "--name", self.app, "--network", self.network,
-                    "--read-only", "--cap-drop", "ALL", "-p", "127.0.0.1::9080",
-                    "-e", f"MQTT_HOST={self.broker}", "-e", "MQTT_USERNAME=bridge",
-                    "-e", "MQTT_PASSWORD=test-only", "-e", "LOG_LEVEL=debug", "tenko-local:latest")
-        self.set_base()
+        self.start_app("debug")
         self.raw = form(next(line for line in (ROOT / "prompt.md").read_text().splitlines()
                              if line.startswith("sn=")).encode())
         self.assertEqual(self.poll(), "nochange")
         self.wait_state(lambda value: value.get("schedule_mode") == "Whole week")
+
+    def start_app(self, level):
+        self.docker("run", "-d", "--name", self.app, "--network", self.network,
+                    "--read-only", "--cap-drop", "ALL", "-p", "127.0.0.1::9080",
+                    "-e", f"MQTT_HOST={self.broker}", "-e", "MQTT_USERNAME=bridge",
+                    "-e", "MQTT_PASSWORD=test-only", "-e", f"LOG_LEVEL={level}", "tenko-local:latest")
+        self.set_base()
 
     def cleanup(self):
         self.client.disconnect()
@@ -123,8 +133,7 @@ class DockerFlowTests(unittest.TestCase):
         return self.http("/update/param", urlencode(self.raw).encode())
 
     def test_native_mqtt_schedule_lifecycle(self):
-        for kind, key in (("button", "cancel_pending"), ("button", "editor_apply_all"),
-                          ("number", "schedule_MO_01_hour"), ("binary_sensor", "status_heating")):
+        for kind, key in OBSOLETE_DISCOVERY:
             self.wait(lambda: self.latest.get(f"homeassistant/{kind}/tenko_211229_005/{key}/config") == "")
         with self.messages_lock:
             hours = json.loads(self.latest["homeassistant/select/tenko_211229_005/schedule_MO_01_hour/config"])
@@ -167,9 +176,9 @@ class DockerFlowTests(unittest.TestCase):
         values = self.wait_state(lambda value: value["schedule_TU_layer"] == "reported"
                                  and value["schedule_TU_01_target"] == 21 and value["ten_1_on"] == "On")
         self.assertEqual(values["ten_2_on"], "Off")
-        self.assertEqual(values["heating_on"], "On")
+        self.assertEqual(values["modulated_power"], 33)
         with self.messages_lock:
-            for key in ("ten_1_on", "ten_2_on", "heating_on"):
+            for key in ("ten_1_on", "ten_2_on"):
                 payload = json.loads(self.latest[f"homeassistant/binary_sensor/tenko_211229_005/{key}/config"])
                 self.assertNotIn("device_class", payload)
 
@@ -241,3 +250,74 @@ class DockerFlowTests(unittest.TestCase):
         self.assertEqual(self.poll(), "nochange")
         self.wait_state(lambda value: value["flow_cutoff"] == desired_cutoff
                         and value["command_state"] == "applied")
+
+    def test_thermostats_energy_and_debug_cleanup(self):
+        with self.messages_lock:
+            constant = json.loads(self.latest["homeassistant/climate/tenko_211229_005/constant_thermostat/config"])
+            minimum = json.loads(self.latest["homeassistant/climate/tenko_211229_005/minimum_thermostat/config"])
+            energy = json.loads(self.latest["homeassistant/sensor/tenko_211229_005/period_amount/config"])
+        self.assertEqual((constant["min_temp"], constant["max_temp"], constant["temp_step"]), (7, 30, .1))
+        self.assertEqual(minimum["modes"], ["off", "heat_cool"])
+        self.assertEqual(energy["device"]["name"], "TENKO Boiler Energy Meter")
+        self.assertEqual(energy["device"]["via_device"], "tenko_211229_005")
+        self.assertEqual(energy["unique_id"], "tenko_211229_005_period_amount")
+        self.assertEqual(self.topic_json("state")["period_amount"], parse_report(self.raw)["decoded"]["STA"][1])
+
+        self.send("constant_target", "30.1")
+        self.wait_state(lambda value: "7..30" in value["command_error"])
+        self.assertEqual(self.poll(), "nochange")
+        self.send("constant_target", "20.1")
+        self.wait_state(lambda value: value["constant_target"] == 20.1)
+        self.send("constant_mode", "heat")
+        self.wait_state(lambda value: value["constant_mode"] == "heat")
+        self.assertIn(";TMP=On,20.1;", self.poll())
+        self.assertEqual(self.http("/update/status", b"sn=211229_005&status=0"), "status updated")
+        self.assertIn(";TMP=On,20.1;", self.poll())
+        self.raw["TMP"] = "On,20.1"
+        self.assertEqual(self.poll(), "nochange")
+        self.wait_state(lambda value: value["command_state"] == "applied")
+        self.send("constant_mode", "off")
+        self.wait_state(lambda value: value["constant_mode"] == "off")
+        self.assertIn(";TMP=Off,20.1;", self.poll())
+        self.raw["TMP"] = "Off,20.1"
+        self.assertEqual(self.poll(), "nochange")
+
+        self.send("minimum_low", "8")
+        self.wait_state(lambda value: value["pmt_min"] == 8)
+        self.send("minimum_high", "12")
+        self.wait_state(lambda value: value["pmt_max"] == 12)
+        self.send("minimum_mode", "heat_cool")
+        self.wait_state(lambda value: value["minimum_mode"] == "heat_cool")
+        self.assertIn(";PMT=On,08,12;", self.poll())
+        self.raw["PMT"] = "[On,8,12]"
+        self.assertEqual(self.poll(), "nochange")
+        self.send("minimum_mode", "off")
+        self.wait_state(lambda value: value["minimum_mode"] == "off")
+        self.assertIn(";PMT=Off,08,12;", self.poll())
+        self.raw["PMT"] = "[Off,8,12]"
+        self.assertEqual(self.poll(), "nochange")
+
+        for raw, expected in (("On,Off,1,3", 0), ("On,On,1,3", 33),
+                              ("On,On,2,3", 66), ("Off,Off,1,3", None)):
+            self.raw["MOD"] = raw
+            self.assertEqual(self.poll(), "nochange")
+            self.wait_state(lambda value: value["modulated_power"] == expected)
+        self.raw["STU"] = "[On,Off]"
+        self.assertEqual(self.poll(), "nochange")
+        self.wait_state(lambda value: value["manual_1"] == "On" and value["manual_2"] == "Off")
+        self.assertIn("using STU", self.docker("logs", self.app))
+
+        self.docker("rm", "-f", "-v", self.app)
+        self.start_app("INFO")
+        self.assertEqual(self.poll(), "nochange")
+        values = self.wait_state(lambda value: "day_amount" not in value and "raw_status" not in value)
+        self.assertIn("period_amount", values)
+        self.assertIn("pmt_temperature", values)
+        self.assertNotIn("month_0", values)
+        self.wait(lambda: self.latest.get("tenko/211229_005/diagnostics") == "")
+        for key in ("raw_fields", "stage_conflict", "day_amount", "month_0", "month_11"):
+            self.wait(lambda: self.latest.get(f"homeassistant/sensor/tenko_211229_005/{key}/config") == "")
+        with self.messages_lock:
+            for key in ("pump", "clock", "error", "frost", "period_amount"):
+                payload = json.loads(self.latest[f"homeassistant/sensor/tenko_211229_005/{key}/config"])
+                self.assertNotIn("entity_category", payload)

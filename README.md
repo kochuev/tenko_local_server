@@ -44,17 +44,30 @@ creates entities, not dashboard cards or views. Paste the YAML into a manual
 dashboard using HA's raw configuration editor; adapt entity IDs to your registry.
 It includes separate **Boiler** and **Schedule** views, with no custom cards.
 The built-in device page has fixed HA sections: MQTT discovery cannot add
-custom schedule sections or control their sorting. Ordinary boiler parameters
-remain in Configuration; custom grouping/order is available only in dashboards.
+custom schedule sections or control their sorting. Schedule controls belong
+to Configuration; other settings are uncategorized Controls and operational
+readings are Sensors. Diagnostic entities exist only with `LOG_LEVEL=DEBUG`.
 
 ## Native Home Assistant configuration
 
 ### Ordinary settings
 
-Switches configure constant-temperature enable, PMT enable, automatic
-modulation, and the two manual stage permissions. Number entities configure
-the stored air target, flow/return cutoff and restart drop, PMT restart/stop
-thresholds, and pump lead-in/run-on delays. A select chooses:
+Two native MQTT thermostats replace the old enable switches and setpoint numbers:
+
+| Thermostat | Modes and setpoints |
+|---|---|
+| **Constant temperature** | Off / Heat; target **7-30 C**, precision/step **0.1 C**. Off writes TMP enable=Off. |
+| **Maintaining Minimum Temperature** | Off / Heat-Cool range; lower restart **6-15 C**, upper stop **7-17 C**, whole degrees, lower < upper. Off writes PMT enable=Off. |
+
+The second thermostat uses HA's native dual-setpoint `heat_cool` mode to expose
+the restart/stop band; it does **not** add cooling to the boiler. Its current
+temperature is the reported PM reading; the constant thermostat uses TA.
+An enable change does not change USE: the separate control-mode selector
+still chooses constant versus scheduled operation.
+
+**Power Modulation Mode** and the two manual-stage permissions remain switches.
+Flow/return cutoff and restart-drop values and pump delays remain numbers.
+A select chooses:
 
 | Control mode | Meaning |
 |---|---|
@@ -65,7 +78,7 @@ thresholds, and pump lead-in/run-on delays. A select chooses:
 These controls show **accepted pending values** while a command is waiting
 for confirmation, otherwise boiler-reported values. A change queues a command
 for the next boiler poll, without snapping the field back to the old value.
-The original reported settings remain separately available in MQTT diagnostics;
+The original reported settings remain separately available in DEBUG MQTT diagnostics;
 telemetry such as measured temperatures and actual heating is never overridden.
 **Settings upload status** remains `pending` until a later parameter report
 confirms it. Inspect
@@ -77,32 +90,32 @@ Main parameter meanings and accepted *new* values:
 
 | Wire setting | Native control / interpretation | Accepted values |
 |---|---|---|
-| `TMP[0]` | Constant temperature enabled | On/Off |
-| `TMP[1]` | Stored **air target**, not measured TA | 7-40 C, step 0.1 |
+| `TMP[0]` | Constant thermostat mode | Off / Heat maps to Off/On |
+| `TMP[1]` | Constant thermostat **air target**, not measured TA | 7-30 C, step 0.1 |
 | `FI[0]` | Flow-temperature heating cutoff | 10-75 C, whole degrees |
 | `FI[1]` | Flow restart drop below cutoff | 1-9 C, whole degrees |
 | `RE[0]` | Return-temperature heating cutoff | 10-75 C, whole degrees |
 | `RE[1]` | Return restart drop below cutoff | 1-9 C, whole degrees |
-| `PMT[0]` | Minimum-temperature preset enabled | On/Off |
-| `PMT[1]` | PMT lower/restart threshold | 6-15 C, whole degrees |
-| `PMT[2]` | PMT upper/stop threshold | 7-17 C, whole degrees; strictly above lower |
+| `PMT[0]` | Maintaining Minimum Temperature thermostat mode | Off / range maps to Off/On |
+| `PMT[1]` | Lower/restart setpoint | 6-15 C, whole degrees |
+| `PMT[2]` | Upper/stop setpoint | 7-17 C, whole degrees; strictly above lower |
 | `pNA[0]` | Pump start to heating lead-in | 1-15 whole minutes |
 | `pNA[1]` | Heating stop to pump stop run-on | 1-15 whole minutes |
-| `MOD` | Automatic modulation enable, not actual heating | On/Off |
+| `MOD` | Power Modulation Mode enable, not actual heating | On/Off |
 | `STU[0/1]` | Manual stage 1/2 permission, not actual heating | On/Off, applicable with modulation off |
 
 Reported values outside UI limits, such as the captured stored target 6.9 C,
-are retained without clamping. Set a valid target before enabling that preset.
-PMT threshold changes are validated as a pair; adjust them in an order that
-keeps lower < upper, or send an atomic tuple through MQTT.
+are retained in raw diagnostics without clamping; the thermostat target is
+unknown until it is valid. Set a valid target before enabling the thermostat.
+Turning a thermostat off remains possible without rewriting its old setpoints.
+Old pending TMP commands outside 7-30 C are blocked with an explicit error
+rather than retransmitted; entering a valid target replaces the blocked command.
+Range changes are validated as a pair; adjust them in an order that keeps
+lower < upper, or send an atomic tuple through MQTT.
 
-If ST1/ST2 enable flags conflict with STU, neither silently wins. The two
-manual-stage controls become unavailable until the conflict is resolved.
-Choose **Manual-stage conflict source** (`ST1/ST2` or `STU`), then press
-**Resolve manual-stage conflict using selected source**. This explicitly
-queues the chosen complete STU tuple; it is not considered applied until
-consistent boiler reports confirm it. There are still only two manual-stage
-enable controls, not duplicated ST1/ST2 and STU switches.
+**STU is always authoritative** for manual-stage permissions. ST1/ST2 conflicts
+are logged as warnings; they do not block controls or unrelated uploads.
+The conflict-source selector and resolve button have been removed.
 
 ### Schedule: individual point rows
 
@@ -223,7 +236,7 @@ For default prefixes and serial `211229_005`:
 | `tenko/211229_005/availability` | Parameter-report freshness |
 | `tenko/211229_005/status_availability` | Independent separate-status freshness |
 | `tenko/211229_005/state` | Actual telemetry, accepted pending control values and upload status |
-| `tenko/211229_005/diagnostics` | Raw/decoded parameters, last raw status request/method/path, reported settings, pending commands, legacy unsent drafts and assumptions |
+| `tenko/211229_005/diagnostics` | DEBUG only: raw/decoded parameters, last status request, reported settings, pending commands and legacy drafts |
 | `tenko/211229_005/schedules/ED` | `{points, displayed_points, pending, layer, validation_error, ...}`; equivalent topics for MO-SU |
 | `tenko/211229_005/command/<entity-key>` | Native control command, never retained |
 | `tenko/211229_005/command/settings` | Atomic JSON patch of demonstrated response keys |
@@ -234,10 +247,10 @@ Ordinary command keys:
 | Keys | Wire field |
 |---|---|
 | `mode` | USE |
-| `constant_enabled`, `constant_target` | TMP[0/1] |
+| `constant_mode`, `constant_target` | TMP[0/1]; mode payload is `off` or `heat` |
 | `flow_cutoff`, `flow_hysteresis` | FI[0/1] |
 | `return_cutoff`, `return_hysteresis` | RE[0/1] |
-| `pmt_enabled`, `pmt_min`, `pmt_max` | PMT[0/1/2] |
+| `minimum_mode`, `minimum_low`, `minimum_high` | PMT[0/1/2]; mode payload is `off` or `heat_cool` |
 | `modulation` | MOD enable flag |
 | `manual_1`, `manual_2` | STU[0/1] |
 | `pump_start`, `pump_stop` | pNA[0/1] |
@@ -249,9 +262,8 @@ POINT is 01-10. `schedule_mode` accepts `Whole week`, `Individual days`, or
 `Constant temperature`.
 
 Schedule point commands queue immediately; no apply/discard commands exist.
-The remaining native button key is `resolve_stages`, with exact payload `PRESS`.
-There is no `cancel_pending` command.
-`stage_resolution_source` accepts `ST1/ST2` or `STU`. All entities and their
+There are no apply, discard, conflict-resolution or cancel buttons.
+All entities and their
 full discovery payloads are defined centrally in `tenko/entities.py`.
 
 Example atomic command for automations:
@@ -296,7 +308,7 @@ The original historical captures remain unchanged in `prompt.md`.
 `POST /update/status` is enabled by default, as confirmed by the boiler's
 access log. It accepts form data such as `sn=211229_005&status=1` and returns
 the exact acknowledgment `status updated`. The last raw form, method, path,
-status and receipt timestamp are persisted and exposed through MQTT.
+status and receipt timestamp are persisted and exposed through DEBUG diagnostics.
 STATUS_PATH/STATUS_METHOD can override the endpoint if needed; supported
 form-body methods are POST/PUT/PATCH. Raw status and its timestamp remain
 independent of MOD/TEN telemetry. **Status meanings are unknown**: no status
@@ -307,24 +319,52 @@ A status request therefore does not clear pending settings or mark them
 applied; matching parameter values remain the confirmation.
 
 TA/TF/TR, PM-associated temperature and pressure are measurements. NA, TEN1/
-TEN2, MOD heating/counts, PM state and AF phase are actual states, not settings.
+TEN2, MOD flags/counts, PM state and AF phase are reports, not settings.
 TEN1 and TEN2 are labeled **Heating element 1** and **Heating element 2**.
-These and **Modulation heating** use plain On/Off binary sensors, not the
+These use plain On/Off binary sensors, not the
 heat device class that Home Assistant renders as Hot/Normal. Their existing
 unique IDs are preserved, so an existing registry may retain old entity IDs.
-AF Off means standby; On means checking, not enabled. Unknown raw Err encoding
-is not decoded into numbered diagnostic errors. Clock, raw weekday, sensor
+**AF-5**, **Pump state**, **Error Code** and **Boiler clock** are normal Sensors.
+The clock is formatted as `HH:MM`, without inventing a timezone.
+AF Off means standby; On means checking, not enabled. Err is shown as its
+reported Error Code without inventing a numbered fault description. Raw weekday, sensor
 type and diagnostics are read-only; unsupported writes are not invented.
 Nominal Pow and stage capacities are **rated kW**, never current consumption.
 Manual stage permissions do not prove heating is active.
 
-STA period/amount, StD, StW and twelve YSt indexes are reference sensors with
-**presumed kWh** units. Scaling, resets/windows and month ordering remain
-unverified. They have no energy device class or total/total_increasing state
-class. Never sum successive reports, accumulate positive differences, import
-them as timestamped history, or use them as Energy dashboard sources. Prefer
-a verified external cumulative electricity meter. No estimated power or
-historical energy import is enabled.
+### Modulated Power
+
+The old Modulation heating sensor is replaced by **Modulated Power** (%):
+
+| MOD report | Percentage |
+|---|---|
+| `On,Off,1,3` | 0% |
+| `On,On,1,3` | 33% |
+| `On,On,2,3` | 66% |
+| `Off,Off,1,3` | unknown |
+
+When mode and heating are On, the formula is `floor(100 * count / total)`.
+Heating Off gives zero only when Power Modulation Mode is On. Disabled mode,
+unknown flags, fractional/out-of-range counts and nonpositive totals give
+unknown, not zero. Stale reports make the sensor unavailable. This is a
+modulation percentage, not measured electrical power in watts.
+
+### Energy meter
+
+The dependent **TENKO Boiler Energy Meter** device exposes **Energy** in kWh,
+using the same `STA[1]` reading previously named Boiler period consumption.
+Its existing MQTT unique ID and `period_amount` state key are preserved;
+HA may therefore retain the old entity ID. New installations normally use
+`sensor.tenko_boiler_energy_meter_energy`.
+
+This is the boiler's reported **period total**, not a verified lifetime
+counter. It has energy device class but deliberately no `total` or
+`total_increasing` state class: do not accumulate its deltas or assume it is
+suitable for the HA Energy dashboard. No scaling, historical import or
+extra consumption estimation is performed.
+
+The STA period length, StD, StW and YSt monthly values are DEBUG-only diagnostic
+sensors. Their windows, resets and month ordering remain unverified.
 
 Availability requires both bridge connection and fresh boiler reports; a
 live bridge alone does not make old temperatures fresh. Separate-status
@@ -342,7 +382,8 @@ rather than silently resetting pending changes.
 
 `GET /health` reports HTTP liveness and MQTT connectivity. Other non-boiler
 HTTP routes, including the former web editor/API, return 404. Operational
-details and raw state are available through MQTT diagnostic entities/topics.
+details and raw state are available through MQTT diagnostic entities/topics
+with `LOG_LEVEL=DEBUG`.
 MQTT outages do not block durable boiler exchanges; reconnect republishes the
 latest cache and discovery. Storage failures reject commands explicitly.
 
@@ -354,7 +395,14 @@ MQTT topics and payloads. Each **HTTP EXCHANGE** line pairs `request_body`
 with `response_body`, immediately before the access log entry. A startup
 message confirms that HTTP payload dumps are enabled. Low-level MQTT packet
 chatter (PUBACK/PUBLISH) is suppressed, while protocol warnings/errors remain
-visible. Normal INFO logging omits payload dumps.
+visible. Normal INFO logging omits payload dumps and debug-only diagnostic
+entities, including extra energy statistics. Switching out of DEBUG clears
+their retained discovery configurations and raw diagnostics topic.
+
+On upgrade, retained discovery for replaced temperature switches/numbers,
+Modulation heating, duplicate raw readings and conflict-resolution controls
+is removed automatically. Names/categories and the Energy device association
+are republished; existing HA entity IDs or user-customized names may remain.
 
 To see only HTTP request/response pairs without MQTT traffic:
 

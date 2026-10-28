@@ -15,48 +15,34 @@ views:
           - sensor.tenko_boiler_pressure
           - binary_sensor.tenko_boiler_heating_element_1
           - binary_sensor.tenko_boiler_heating_element_2
-          - binary_sensor.tenko_boiler_modulation_heating
+          - sensor.tenko_boiler_modulated_power
+          - sensor.tenko_boiler_pump_state
+          - sensor.tenko_boiler_af_5
+          - sensor.tenko_boiler_boiler_clock
+          - sensor.tenko_boiler_error_code
+      - type: thermostat
+        entity: climate.tenko_boiler_constant_temperature
+      - type: thermostat
+        entity: climate.tenko_boiler_maintaining_minimum_temperature
       - type: entities
         title: Settings
         entities:
           - select.tenko_boiler_control_mode
-          - switch.tenko_boiler_constant_temperature_enabled
-          - number.tenko_boiler_stored_air_target
           - number.tenko_boiler_flow_cutoff
           - number.tenko_boiler_flow_restart_drop
           - number.tenko_boiler_return_cutoff
           - number.tenko_boiler_return_restart_drop
-          - switch.tenko_boiler_pmt_preset_enabled
-          - number.tenko_boiler_pmt_restart_threshold
-          - number.tenko_boiler_pmt_stop_threshold
-          - switch.tenko_boiler_automatic_modulation_enabled
+          - switch.tenko_boiler_power_modulation_mode
           - switch.tenko_boiler_manual_stage_1_enable_modulation_off_only
           - switch.tenko_boiler_manual_stage_2_enable_modulation_off_only
           - number.tenko_boiler_pump_lead_in_delay
           - number.tenko_boiler_pump_run_on_delay
-          - select.tenko_boiler_manual_stage_conflict_source
-          - button.tenko_boiler_resolve_manual_stage_conflict_using_selected_source
           - sensor.tenko_boiler_settings_upload_status
           - sensor.tenko_boiler_settings_command_error
       - type: entities
-        title: Boiler-reported consumption (reference only)
+        title: Energy meter
         entities:
-          - sensor.tenko_boiler_boiler_statistics_period
-          - sensor.tenko_boiler_boiler_period_consumption_presumed_kwh
-          - sensor.tenko_boiler_boiler_1_day_consumption_presumed_kwh
-          - sensor.tenko_boiler_boiler_7_day_consumption_presumed_kwh
-          - sensor.tenko_boiler_boiler_monthly_index_0_presumed_kwh
-          - sensor.tenko_boiler_boiler_monthly_index_1_presumed_kwh
-          - sensor.tenko_boiler_boiler_monthly_index_2_presumed_kwh
-          - sensor.tenko_boiler_boiler_monthly_index_3_presumed_kwh
-          - sensor.tenko_boiler_boiler_monthly_index_4_presumed_kwh
-          - sensor.tenko_boiler_boiler_monthly_index_5_presumed_kwh
-          - sensor.tenko_boiler_boiler_monthly_index_6_presumed_kwh
-          - sensor.tenko_boiler_boiler_monthly_index_7_presumed_kwh
-          - sensor.tenko_boiler_boiler_monthly_index_8_presumed_kwh
-          - sensor.tenko_boiler_boiler_monthly_index_9_presumed_kwh
-          - sensor.tenko_boiler_boiler_monthly_index_10_presumed_kwh
-          - sensor.tenko_boiler_boiler_monthly_index_11_presumed_kwh
+          - sensor.tenko_boiler_energy_meter_energy
   # Generated Schedule view - regenerate before customizing entity IDs.
   - title: Schedule
     path: schedule

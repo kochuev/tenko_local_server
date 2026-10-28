@@ -9,6 +9,10 @@ TUPLES = {"PM": 2, "ST1": 2, "ST2": 2, "STA": 2, "YSt": 12, "TIM": 6,
           "TMP": 2, "FI": 2, "RE": 2, "PMT": 3, "pNA": 2, "MOD": 4, "STU": 2}
 NUMBER_FIELDS = {"TA", "TF", "TR", "Pow", "Davl", "StD", "StW"}
 SERIAL = re.compile(r"[A-Za-z0-9_-]{1,80}")
+THERMOSTAT_COMMANDS = {
+    "constant_mode": ("TMP", 0), "constant_target": ("TMP", 1),
+    "minimum_mode": ("PMT", 0), "minimum_low": ("PMT", 1), "minimum_high": ("PMT", 2),
+}
 DECIMAL = re.compile(r"[+-]?(?:\d+(?:\.\d*)?|\.\d+)")
 
 
@@ -81,8 +85,6 @@ def parse_report(raw):
     if all(isinstance(decoded.get(k), list) for k in ("ST1", "ST2", "STU")):
         flags = [decoded["ST1"][0], decoded["ST2"][0]]
         duplicate = flags != decoded["STU"]
-        if duplicate:
-            settings.pop("STU", None)
     return {"raw": raw, "decoded": decoded, "settings": settings,
             "parse_errors": errors, "stage_conflict": duplicate}
 
@@ -124,7 +126,7 @@ def validate_setting(key, value):
             result.append([hour, target])
         return result
     if key == "TMP":
-        return [flag(value[0]), numeric(value[1], 7, 40, .1)]
+        return [flag(value[0]), numeric(value[1], 7, 30, .1)]
     if key in ("FI", "RE"):
         return [numeric(value[0], 10, 75), numeric(value[1], 1, 9)]
     if key == "PMT":

@@ -5,8 +5,8 @@ import time
 
 import paho.mqtt.client as mqtt
 
-from .entities import BY_KEY, ENTITIES, REMOVED_ENTITIES, discovery, state
-from .protocol import SCHEDULES, SERIAL
+from .entities import BY_KEY, ENTITIES, REMOVED_ENTITIES, discovery, enabled_entities, state
+from .protocol import SCHEDULES, SERIAL, THERMOSTAT_COMMANDS
 from .schedule_editor import SCHEDULE_MODES, details
 
 LOG = logging.getLogger(__name__)
@@ -107,6 +107,8 @@ class Bridge:
             payload = message.payload.decode("utf-8")
             if key == "settings":
                 self.store.command(serial, json.loads(payload))
+            elif key in THERMOSTAT_COMMANDS:
+                self.store.thermostat_command(serial, key, payload)
             else:
                 entity = BY_KEY.get(key)
                 if not entity or not (entity.setting or entity.action):
@@ -138,7 +140,7 @@ class Bridge:
     def command_io_error(self, serial):
         LOG.exception("MQTT command NOT accepted for %s: state could not be persisted", serial)
         try:
-            values = state(self.store.get(serial))
+            values = state(self.store.get(serial), self.config)
         except KeyError:
             return
         values.update(command_state="error", command_error="Command NOT accepted: persistence failed; inspect service logs")
@@ -156,27 +158,31 @@ class Bridge:
                 for kind, key in REMOVED_ENTITIES:
                     self.publish(f"{config.discovery_prefix}/{kind}/tenko_{serial}/{key}/config", "")
                 self.publish(f"{base}/schedule_editor", "")
+                visible = enabled_entities(config)
                 for entity in ENTITIES:
                     self.publish(f"{config.discovery_prefix}/{entity.kind}/tenko_{serial}/{entity.key}/config",
-                                 discovery(entity, serial, firmware, config))
+                                 discovery(entity, serial, firmware, config) if entity in visible else "")
+                if config.log_level.upper() != "DEBUG":
+                    self.publish(f"{base}/diagnostics", "")
                 if self.connected:
                     self.firmwares[serial] = firmware
-            self.publish(f"{base}/state", state(record))
+            self.publish(f"{base}/state", state(record, config))
             self.availability(record)
             report = record.get("report", {})
-            self.publish(f"{base}/diagnostics", {
-                "raw": report.get("raw", {}), "decoded": report.get("decoded", {}),
-                "parse_errors": report.get("parse_errors", []), "stage_conflict": report.get("stage_conflict"),
-                "pending": record["pending"], "reported": report.get("settings", {}),
-                "draft": record["draft"],
-                "command_error": record["command_error"], "attempts": record["attempts"],
-                "separate_raw_status": record["status"],
-                "status_report": record["status_report"],
-                "status_interpretation": "Unknown; raw status is not interpreted as heating",
-                "stage_equivalence": "ASSUMED: ST1/ST2 enable flags duplicate STU",
-                "energy_units": "presumed kWh; scaling/reset/month ordering unverified",
-                "monthly_values": report.get("decoded", {}).get("YSt"),
-            })
+            if config.log_level.upper() == "DEBUG":
+                self.publish(f"{base}/diagnostics", {
+                    "raw": report.get("raw", {}), "decoded": report.get("decoded", {}),
+                    "parse_errors": report.get("parse_errors", []), "stage_conflict": report.get("stage_conflict"),
+                    "pending": record["pending"], "reported": report.get("settings", {}),
+                    "draft": record["draft"],
+                    "command_error": record["command_error"], "attempts": record["attempts"],
+                    "separate_raw_status": record["status"],
+                    "status_report": record["status_report"],
+                    "status_interpretation": "Unknown; raw status is not interpreted as heating",
+                    "stage_equivalence": "STU is authoritative; ST1/ST2 conflicts are logged",
+                    "energy_units": "kWh; period total, not a verified lifetime counter",
+                    "monthly_values": report.get("decoded", {}).get("YSt"),
+                })
             for key in SCHEDULES:
                 self.publish(f"{base}/schedules/{key}", details(record, key))
 
