@@ -22,12 +22,13 @@ views:
           - sensor.tenko_boiler_error_code
       - type: thermostat
         entity: climate.tenko_boiler_constant_temperature
-      - type: thermostat
-        entity: climate.tenko_boiler_maintaining_minimum_temperature
       - type: entities
         title: Settings
         entities:
           - select.tenko_boiler_control_mode
+          - switch.tenko_boiler_maintaining_minimum_temperature_enabled
+          - number.tenko_boiler_maintaining_minimum_temperature_min
+          - number.tenko_boiler_maintaining_minimum_temperature_max
           - number.tenko_boiler_flow_cutoff
           - number.tenko_boiler_flow_restart_drop
           - number.tenko_boiler_return_cutoff

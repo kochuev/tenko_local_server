@@ -33,7 +33,6 @@ ENTITIES = [
     Entity("modulated_power", "Modulated Power", unit="%", measurement=True),
     Entity("period_amount", "Energy", unit="kWh", device_class="energy", energy_device=True),
     Entity("constant_thermostat", "Constant temperature", kind="climate"),
-    Entity("minimum_thermostat", "Maintaining Minimum Temperature", kind="climate"),
 ]
 for key, name in (
     ("pump", "Pump"), ("frost", "AF-5"), ("error", "Error Code"),
@@ -51,11 +50,15 @@ for key, name, unit in (
     ("raw_status", "Separate raw status", None),
     ("stage_conflict", "Manual-stage duplicate consistency", None),
     ("raw_fields", "Raw protocol diagnostics", None), ("parse_errors", "Report parsing", None),
+):
+    ENTITIES.append(Entity(key, name, unit=unit, category="diagnostic", debug_only=True))
+for key, name, unit in (
     ("statistics_days", "Boiler statistics period", "d"),
     ("day_amount", "Boiler 1-day consumption", "kWh"),
     ("week_amount", "Boiler 7-day consumption", "kWh"),
 ):
-    ENTITIES.append(Entity(key, name, unit=unit, category="diagnostic", debug_only=True))
+    ENTITIES.append(Entity(key, name, unit=unit, category="diagnostic",
+                           debug_only=True, energy_device=True))
 for key, name in (
     ("ten_1_on", "Heating element 1"), ("ten_2_on", "Heating element 2"),
 ):
@@ -68,7 +71,7 @@ ENTITIES.extend([
 ])
 for i in range(12):
     ENTITIES.append(Entity(f"month_{i}", f"Boiler monthly index {i}", unit="kWh",
-                           category="diagnostic", debug_only=True))
+                           category="diagnostic", debug_only=True, energy_device=True))
 for schedule in SCHEDULES:
     ENTITIES.append(Entity(f"schedule_{schedule}", f"{schedule} stored schedule",
                            category="diagnostic", debug_only=True))
@@ -80,6 +83,9 @@ def control(key, name, setting, index=None, kind="number", low=None, high=None, 
 
 
 control("mode", "Control mode", "USE", kind="select")
+control("pmt_enabled", "Maintaining Minimum Temperature enabled", "PMT", 0, "switch")
+control("pmt_min", "Maintaining Minimum Temperature min", "PMT", 1, low=6, high=15, unit="°C")
+control("pmt_max", "Maintaining Minimum Temperature max", "PMT", 2, low=7, high=17, unit="°C")
 for prefix, field in (("flow", "FI"), ("return", "RE")):
     control(f"{prefix}_cutoff", f"{prefix.title()} cutoff", field, 0, low=10, high=75, unit="°C")
     control(f"{prefix}_hysteresis", f"{prefix.title()} restart drop", field, 1, low=1, high=9, unit="°C")
@@ -89,7 +95,7 @@ control("manual_2", "Manual stage 2 enable (modulation off only)", "STU", 1, "sw
 control("pump_start", "Pump lead-in delay", "pNA", 0, low=1, high=15, unit="min")
 control("pump_stop", "Pump run-on delay", "pNA", 1, low=1, high=15, unit="min")
 ENTITIES.extend([
-    Entity("schedule_mode", "Schedule mode", kind="select", category="config",
+    Entity("schedule_mode", "Schedule mode", kind="select",
            setting="USE", options=tuple(SCHEDULE_MODES)),
 ])
 for key, (day, slot, component) in POINT_CONTROLS.items():
@@ -106,7 +112,9 @@ for day in SCHEDULES:
         Entity(f"schedule_{day}_validation", f"{DAY_NAMES[day]} schedule validation", category="config"),
     ])
 BY_KEY = {entity.key: entity for entity in ENTITIES}
-RECREATE_ENTITIES = ("period_amount", "pump", "frost", "error", "clock")
+RECREATE_ENTITIES = ("pump", "frost", "error", "clock") + tuple(
+    entity.key for entity in ENTITIES
+    if entity.energy_device or (entity.setting and entity.key not in POINT_CONTROLS))
 REMOVED_ENTITIES = (
     ("select", "editor_day"), ("select", "editor_slot"), ("select", "editor_copy_to"),
     ("number", "editor_hour"), ("number", "editor_target"), ("switch", "editor_off"),
@@ -120,7 +128,7 @@ REMOVED_ENTITIES = (
     ("sensor", "pmt_state"), ("sensor", "pmt_temperature"),
     ("sensor", "serial"), ("sensor", "firmware"),
     ("switch", "constant_enabled"), ("number", "constant_target"),
-    ("switch", "pmt_enabled"), ("number", "pmt_min"), ("number", "pmt_max"),
+    ("climate", "minimum_thermostat"),
     ("select", "stage_resolution_source"), ("button", "resolve_stages"),
 ) + tuple(
     ("number", key) for key, (_, _, component) in POINT_CONTROLS.items() if component == 0
@@ -171,7 +179,6 @@ def state(record, config=None):
              if hour is not None and minute is not None and hour.is_integer()
              and minute.is_integer() and 0 <= hour <= 23 and 0 <= minute <= 59 else None)
     constant_mode = {"On": "heat", "Off": "off"}.get(component("TMP", 0))
-    minimum_mode = {"On": "heat_cool", "Off": "off"}.get(component("PMT", 0))
     constant_target = number(component("TMP", 1))
     if (constant_target is not None and
             (not 7 <= constant_target <= 30 or abs(constant_target * 10 - round(constant_target * 10)) > 1e-7)):
@@ -201,7 +208,6 @@ def state(record, config=None):
         "modulated_power": modulated_power(decoded),
         "constant_thermostat": constant_mode, "constant_mode": constant_mode,
         "constant_enabled": component("TMP", 0), "constant_target": constant_target,
-        "minimum_thermostat": minimum_mode, "minimum_mode": minimum_mode,
         "pmt_min": number(component("PMT", 1)), "pmt_max": number(component("PMT", 2)),
     }
     for i in range(12):
@@ -226,7 +232,7 @@ def state(record, config=None):
     values.update(editor_state(record))
     if config is not None:
         keys = {entity.key for entity in enabled_entities(config)}
-        keys.update({"constant_mode", "constant_target", "minimum_mode", "pmt_min", "pmt_max", "pmt_temperature"})
+        keys.update({"constant_mode", "constant_target"})
         values = {key: value for key, value in values.items() if key in keys}
     return values
 
@@ -282,27 +288,19 @@ def discovery(entity, serial, firmware, config):
     if entity.kind == "climate":
         payload.pop("state_topic")
         payload.pop("value_template")
-        prefix = "constant" if entity.key == "constant_thermostat" else "minimum"
         payload.update(
-            modes=["off", "heat"] if prefix == "constant" else ["off", "heat_cool"],
-            mode_command_topic=f"{base}/command/{prefix}_mode",
+            modes=["off", "heat"],
+            mode_command_topic=f"{base}/command/constant_mode",
             mode_state_topic=f"{base}/state",
-            mode_state_template="{{ value_json." + prefix + "_mode }}",
+            mode_state_template="{{ value_json.constant_mode }}",
             current_temperature_topic=f"{base}/state",
-            current_temperature_template="{{ value_json." + ("air" if prefix == "constant" else "pmt_temperature") + " }}",
-            temperature_unit="C", min_temp=7 if prefix == "constant" else 6,
-            max_temp=30 if prefix == "constant" else 17,
-            temp_step=.1 if prefix == "constant" else 1,
-            precision=.1 if prefix == "constant" else 1,
+            current_temperature_template="{{ value_json.air }}",
+            temperature_unit="C", min_temp=7, max_temp=30, temp_step=.1, precision=.1,
+            temperature_command_topic=f"{base}/command/constant_target",
+            temperature_state_topic=f"{base}/state",
+            temperature_state_template="{{ value_json.constant_target }}",
             optimistic=False, retain=False, qos=1,
         )
-        for field, command, key in (
-            [("temperature", "constant_target", "constant_target")] if prefix == "constant" else
-            [("temperature_low", "minimum_low", "pmt_min"), ("temperature_high", "minimum_high", "pmt_max")]
-        ):
-            payload[f"{field}_command_topic"] = f"{base}/command/{command}"
-            payload[f"{field}_state_topic"] = f"{base}/state"
-            payload[f"{field}_state_template"] = "{{ value_json." + key + " }}"
     if entity.kind == "sensor" and entity.key.startswith("schedule_") and entity.key.split("_")[1] in SCHEDULES:
         schedule = entity.key.split("_")[1]
         payload.update(json_attributes_topic=f"{base}/schedules/{schedule}")

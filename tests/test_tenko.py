@@ -626,8 +626,10 @@ class MQTTTests(unittest.TestCase):
         self.assertNotIn("state_topic", climate)
         self.assertNotIn("value_template", climate)
         self.assertTrue(climate["mode_command_topic"].endswith("/command/constant_mode"))
-        with self.assertRaises(ValueError):
-            self.store.thermostat_command(self.serial, "constant_mode", "heat")
+        with self.assertLogs("tenko.store", level="WARNING") as logs:
+            record = self.store.thermostat_command(self.serial, "constant_mode", "heat")
+        self.assertEqual(record["pending"]["TMP"], ["On", 7])
+        self.assertIn("6.9 -> 7.0", "\n".join(logs.output))
         for invalid in ("6.9", "30.1", "40", "7.01", "nan"):
             with self.subTest(target=invalid), self.assertRaises(ValueError):
                 self.store.thermostat_command(self.serial, "constant_target", invalid)
@@ -652,22 +654,58 @@ class MQTTTests(unittest.TestCase):
         _, response = self.store.report({**self.raw, "TMP": "On,6.9"})
         self.assertIn(";TMP=Off,6.9;", response)
 
-    def test_minimum_temperature_thermostat_uses_two_setpoints_and_own_enable(self):
-        climate = discovery(BY_KEY["minimum_thermostat"], self.serial, None, self.config)
-        self.assertEqual(climate["modes"], ["off", "heat_cool"])
-        self.assertTrue(climate["temperature_low_command_topic"].endswith("/command/minimum_low"))
-        self.assertTrue(climate["temperature_high_command_topic"].endswith("/command/minimum_high"))
-        self.store.thermostat_command(self.serial, "minimum_low", "8")
-        self.store.thermostat_command(self.serial, "minimum_high", "12")
-        record = self.store.thermostat_command(self.serial, "minimum_mode", "off")
-        self.assertEqual(record["pending"]["PMT"], ["Off", 8, 12])
-        record = self.store.thermostat_command(self.serial, "minimum_mode", "heat_cool")
+    def test_enabling_heat_corrects_legacy_targets_and_waits_for_confirmation(self):
+        for original, corrected in ((6.9, 7), (40, 30), (20.11, 20.1)):
+            with self.subTest(original=original):
+                raw = {**self.raw, "TMP": f"Off,{original}"}
+                self.store.report(raw)
+                with self.assertLogs("tenko.store", level="WARNING"):
+                    record = self.store.thermostat_command(self.serial, "constant_mode", "heat")
+                self.assertEqual(record["pending"]["TMP"], ["On", corrected])
+                self.assertEqual(record["report"]["settings"]["TMP"], ["Off", original])
+                self.assertEqual(state(record)["constant_target"], corrected)
+                _, response = self.store.report(raw)
+                self.assertIn(f";TMP=On,{corrected:.1f};", response)
+                record, response = self.store.report({**raw, "TMP": f"On,{corrected}"})
+                self.assertEqual(response, "nochange")
+                self.assertEqual(record["command_state"], "applied")
+
+    def test_enabling_heat_does_not_invent_a_missing_target(self):
+        self.store.report({**self.raw, "TMP": "Off,unknown"})
+        with self.assertRaisesRegex(ValueError, "numeric target"):
+            self.store.thermostat_command(self.serial, "constant_mode", "heat")
+        self.assertFalse(self.store.get(self.serial)["pending"])
+
+    def test_minimum_temperature_inputs_have_exact_bounds_and_pair_validation(self):
+        for key, low, high in (("pmt_min", 6, 15), ("pmt_max", 7, 17)):
+            payload = discovery(BY_KEY[key], self.serial, None, self.config)
+            self.assertEqual((payload["min"], payload["max"], payload["step"]), (low, high, 1))
+            self.assertEqual(payload["mode"], "box")
+        self.assertNotIn("minimum_thermostat", BY_KEY)
+        self.assertIn(("climate", "minimum_thermostat"), REMOVED_ENTITIES)
+        for key, value in (("pmt_min", "8"), ("pmt_max", "12"), ("pmt_enabled", "On")):
+            self.bridge.on_message(None, None, SimpleNamespace(
+                topic=f"tenko/{self.serial}/command/{key}", payload=value.encode(), retain=False))
+        record = self.store.get(self.serial)
         self.assertEqual(record["pending"]["PMT"], ["On", 8, 12])
-        self.assertEqual(state(record)["minimum_thermostat"], "heat_cool")
-        for key, value in (("minimum_low", "12"), ("minimum_high", "8"),
-                           ("minimum_low", "16"), ("minimum_high", "18"), ("minimum_low", "8.5")):
+        self.assertEqual(state(record)["pmt_enabled"], "On")
+        for key, value in (("pmt_min", "12"), ("pmt_max", "8"), ("pmt_min", "16"),
+                           ("pmt_max", "18"), ("pmt_min", "5"), ("pmt_max", "6"), ("pmt_min", "8.5")):
             with self.subTest(key=key, value=value), self.assertRaises(ValueError):
-                self.store.thermostat_command(self.serial, key, value)
+                self.store.component_command(self.serial, "PMT", BY_KEY[key].index, value)
+        self.store.component_command(self.serial, "PMT", 0, "Off")
+        self.assertEqual(self.store.get(self.serial)["pending"]["PMT"], ["Off", 8, 12])
+        for low, high in ((6, 7), (15, 17)):
+            record = self.store.command(self.serial, {"PMT": ["Off", low, high]})
+            self.assertEqual(record["pending"]["PMT"], ["Off", low, high])
+
+    def test_retired_minimum_thermostat_command_aliases_still_work(self):
+        for key, value in (("minimum_low", "8"), ("minimum_high", "12"), ("minimum_mode", "heat_cool")):
+            self.bridge.on_message(None, None, SimpleNamespace(
+                topic=f"tenko/{self.serial}/command/{key}", payload=value.encode(), retain=False))
+        record = self.store.get(self.serial)
+        self.assertEqual(record["pending"]["PMT"], ["On", 8, 12])
+        self.assertEqual(state(record)["pmt_enabled"], "On")
 
     def test_modulated_power_matches_requested_cases_and_invalid_counts(self):
         for raw, expected in (
@@ -701,7 +739,7 @@ class MQTTTests(unittest.TestCase):
         self.assertEqual(BY_KEY["modulation"].name, "Power Modulation Mode")
         for entity in ENTITIES:
             if entity.setting or entity.action or entity.kind == "climate":
-                self.assertEqual(entity.category, "config" if entity.key.startswith("schedule_") else None)
+                self.assertEqual(entity.category, "config" if entity.key in POINT_CONTROLS else None)
 
     def test_energy_sensor_has_linked_device_and_direct_period_value(self):
         payload = discovery(BY_KEY["period_amount"], self.serial, None, self.config)
@@ -714,6 +752,26 @@ class MQTTTests(unittest.TestCase):
         self.assertEqual(payload["unique_id"], f"tenko_{self.serial}_period_amount")
         for key in ("statistics_days", "day_amount", "week_amount", "month_0", "month_11"):
             self.assertTrue(BY_KEY[key].debug_only)
+
+    def test_all_statistical_diagnostics_move_to_energy_meter_with_stable_ids(self):
+        keys = ("statistics_days", "day_amount", "week_amount") + tuple(f"month_{i}" for i in range(12))
+        self.bridge.config = Config(log_level="DEBUG")
+        self.bridge.connected = True
+        self.bridge.emit(self.serial, discover=True)
+        for key in keys:
+            with self.subTest(key=key):
+                self.assertTrue(BY_KEY[key].debug_only)
+                topic = f"homeassistant/sensor/tenko_{self.serial}/{key}/config"
+                payloads = [payload for name, payload in self.messages if name == topic]
+                self.assertEqual(payloads[0], "")
+                self.assertEqual(len(payloads), 2)
+                payload = payloads[1]
+                self.assertEqual(payload["entity_category"], "diagnostic")
+                self.assertEqual(payload["device"]["identifiers"], [f"tenko_{self.serial}_energy_meter"])
+                self.assertEqual(payload["device"]["via_device"], f"tenko_{self.serial}")
+                self.assertEqual(payload["unique_id"], f"tenko_{self.serial}_{key}")
+        self.assertFalse(BY_KEY["capacity"].energy_device)
+        self.assertFalse(BY_KEY["active_elements"].energy_device)
 
     def test_energy_discovery_is_recreated_once_to_move_existing_entity(self):
         self.bridge.connected = True
@@ -759,6 +817,25 @@ class MQTTTests(unittest.TestCase):
             payloads = [payload for name, payload in self.messages if name == topic]
             self.assertEqual(len(payloads), 1)
             self.assertIsInstance(payloads[0], dict)
+
+    def test_all_nonpoint_settings_migrate_to_controls_but_points_stay_configuration(self):
+        self.bridge.connected = True
+        self.bridge.emit(self.serial, discover=True)
+        for entity in ENTITIES:
+            if not (entity.setting or entity.action or entity.kind == "climate"):
+                continue
+            with self.subTest(key=entity.key):
+                topic = f"homeassistant/{entity.kind}/tenko_{self.serial}/{entity.key}/config"
+                payloads = [payload for name, payload in self.messages if name == topic]
+                if entity.key in POINT_CONTROLS:
+                    self.assertEqual(len(payloads), 1)
+                    self.assertEqual(payloads[0]["entity_category"], "config")
+                else:
+                    self.assertNotIn("entity_category", payloads[-1])
+                    self.assertEqual(payloads[-1]["unique_id"], f"tenko_{self.serial}_{entity.key}")
+                    if entity.setting:
+                        self.assertEqual(payloads[0], "")
+                        self.assertEqual(len(payloads), 2)
 
     def test_debug_discovery_and_retained_data_are_removed_when_debug_is_off(self):
         for level in ("DEBUG", "INFO"):
@@ -812,9 +889,10 @@ class ConfigTests(unittest.TestCase):
 class DashboardTests(unittest.TestCase):
     def test_boiler_cards_use_thermostats_and_linked_energy_device(self):
         dashboard = (ROOT / "examples/home-assistant.yaml").read_text().split(MARKER)[0]
-        self.assertEqual(dashboard.count("- type: thermostat"), 2)
-        for key in ("constant_thermostat", "minimum_thermostat", "period_amount", "modulated_power"):
+        self.assertEqual(dashboard.count("- type: thermostat"), 1)
+        for key in ("constant_thermostat", "pmt_enabled", "pmt_min", "pmt_max", "period_amount", "modulated_power"):
             self.assertIn(entity_id(key), dashboard)
+        self.assertNotIn("climate.tenko_boiler_maintaining_minimum_temperature", dashboard)
         self.assertNotIn("modulation_heating", dashboard)
         self.assertNotIn("constant_temperature_enabled", dashboard)
 

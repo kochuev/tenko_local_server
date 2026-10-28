@@ -161,7 +161,7 @@ class Bridge:
                 visible = enabled_entities(config)
                 for entity in ENTITIES:
                     topic = f"{config.discovery_prefix}/{entity.kind}/tenko_{serial}/{entity.key}/config"
-                    if entity.key in RECREATE_ENTITIES and serial not in self.firmwares:
+                    if entity in visible and entity.key in RECREATE_ENTITIES and serial not in self.firmwares:
                         # HA can retain old registry categories/device associations.
                         # Recreate once, retaining each entity's unique ID.
                         self.publish(topic, "")

@@ -44,24 +44,30 @@ creates entities, not dashboard cards or views. Paste the YAML into a manual
 dashboard using HA's raw configuration editor; adapt entity IDs to your registry.
 It includes separate **Boiler** and **Schedule** views, with no custom cards.
 The built-in device page has fixed HA sections: MQTT discovery cannot add
-custom schedule sections or control their sorting. Schedule controls belong
-to Configuration; other settings are uncategorized Controls and operational
-readings are Sensors. Diagnostic entities exist only with `LOG_LEVEL=DEBUG`.
+custom schedule sections or control their sorting. All editable settings,
+including Control mode and Schedule mode, belong to Controls except schedule
+point hours/targets, which remain in Configuration with their schedule status.
+Operational readings are Sensors. Diagnostic entities exist only with
+`LOG_LEVEL=DEBUG`. Startup migration clears retained Configuration categories
+from ordinary settings while preserving their entity identities.
 
 ## Native Home Assistant configuration
 
 ### Ordinary settings
 
-Two native MQTT thermostats replace the old enable switches and setpoint numbers:
+**Constant temperature** is a native MQTT thermostat with Off / Heat modes
+and a **7-30 C** target, precision/step **0.1 C**. Its current temperature is TA;
+Off writes TMP enable=Off. Enabling Heat corrects a numeric legacy target
+to the nearest valid 0.1 C within 7-30 C (for example 6.9 becomes 7.0).
+The correction is logged and queued together with enablement, not silently
+written into reported telemetry.
 
-| Thermostat | Modes and setpoints |
-|---|---|
-| **Constant temperature** | Off / Heat; target **7-30 C**, precision/step **0.1 C**. Off writes TMP enable=Off. |
-| **Maintaining Minimum Temperature** | Off / Heat-Cool range; lower restart **6-15 C**, upper stop **7-17 C**, whole degrees, lower < upper. Off writes PMT enable=Off. |
+**Maintaining Minimum Temperature** uses an enable switch and two number
+inputs: **min 6-15 C**, **max 7-17 C**, whole degrees, with **max > min**.
+HA's MQTT range thermostat has a shared min/max for both endpoints and cannot
+expose those different endpoint bounds, so the former dual-setpoint thermostat
+is removed. All input commands validate the complete pair before queueing.
 
-The second thermostat uses HA's native dual-setpoint `heat_cool` mode to expose
-the restart/stop band; it does **not** add cooling to the boiler. Its current
-temperature is the reported PM reading; the constant thermostat uses TA.
 An enable change does not change USE: the separate control-mode selector
 still chooses constant versus scheduled operation.
 
@@ -96,7 +102,7 @@ Main parameter meanings and accepted *new* values:
 | `FI[1]` | Flow restart drop below cutoff | 1-9 C, whole degrees |
 | `RE[0]` | Return-temperature heating cutoff | 10-75 C, whole degrees |
 | `RE[1]` | Return restart drop below cutoff | 1-9 C, whole degrees |
-| `PMT[0]` | Maintaining Minimum Temperature thermostat mode | Off / range maps to Off/On |
+| `PMT[0]` | Maintaining Minimum Temperature enabled | On/Off |
 | `PMT[1]` | Lower/restart setpoint | 6-15 C, whole degrees |
 | `PMT[2]` | Upper/stop setpoint | 7-17 C, whole degrees; strictly above lower |
 | `pNA[0]` | Pump start to heating lead-in | 1-15 whole minutes |
@@ -106,10 +112,12 @@ Main parameter meanings and accepted *new* values:
 
 Reported values outside UI limits, such as the captured stored target 6.9 C,
 are retained in raw diagnostics without clamping; the thermostat target is
-unknown until it is valid. Set a valid target before enabling the thermostat.
+unknown until it is valid. Enabling Heat corrects it as described above;
+explicit temperature commands outside 7-30 C are still rejected.
 Turning a thermostat off remains possible without rewriting its old setpoints.
 Old pending TMP commands outside 7-30 C are blocked with an explicit error
-rather than retransmitted; entering a valid target replaces the blocked command.
+rather than retransmitted; entering a valid target or enabling Heat with its
+automatic correction replaces the blocked command.
 Range changes are validated as a pair; adjust them in an order that keeps
 lower < upper, or send an atomic tuple through MQTT.
 
@@ -250,10 +258,14 @@ Ordinary command keys:
 | `constant_mode`, `constant_target` | TMP[0/1]; mode payload is `off` or `heat` |
 | `flow_cutoff`, `flow_hysteresis` | FI[0/1] |
 | `return_cutoff`, `return_hysteresis` | RE[0/1] |
-| `minimum_mode`, `minimum_low`, `minimum_high` | PMT[0/1/2]; mode payload is `off` or `heat_cool` |
+| `pmt_enabled`, `pmt_min`, `pmt_max` | PMT[0/1/2]; switch payload is `On` or `Off` |
 | `modulation` | MOD enable flag |
 | `manual_1`, `manual_2` | STU[0/1] |
 | `pump_start`, `pump_stop` | pNA[0/1] |
+
+The former thermostat command keys `minimum_mode` (`off` / `heat_cool`),
+`minimum_low` and `minimum_high` remain accepted as compatibility aliases,
+but no range thermostat is discovered.
 
 Schedule point commands use `schedule_<DAY>_<POINT>_hour` and
 `schedule_<DAY>_<POINT>_target`, e.g. `schedule_MO_01_hour` with `6` and
@@ -372,8 +384,10 @@ counter. It has energy device class but deliberately no `total` or
 suitable for the HA Energy dashboard. No scaling, historical import or
 extra consumption estimation is performed.
 
-The STA period length, StD, StW and YSt monthly values are DEBUG-only diagnostic
-sensors. Their windows, resets and month ordering remain unverified.
+The STA period length, StD, StW and all twelve YSt monthly values are DEBUG-only
+diagnostic sensors on **TENKO Boiler Energy Meter**, not the main boiler device.
+They retain their unique IDs and are re-registered at startup to migrate old
+device associations. Their windows, resets and month ordering remain unverified.
 
 Availability requires both bridge connection and fresh boiler reports; a
 live bridge alone does not make old temperatures fresh. Separate-status
@@ -408,7 +422,8 @@ visible. Normal INFO logging omits payload dumps and debug-only diagnostic
 entities, including extra energy statistics. Switching out of DEBUG clears
 their retained discovery configurations and raw diagnostics topic.
 
-On upgrade, retained discovery for replaced temperature switches/numbers,
+On upgrade, retained discovery for replaced constant-temperature switches/numbers,
+the retired minimum-temperature thermostat,
 Modulation heating, duplicate raw readings and conflict-resolution controls
 is removed automatically. Names/categories and the Energy device association
 are republished; existing HA entity IDs or user-customized names may remain.

@@ -8,7 +8,7 @@ import threading
 import time
 from pathlib import Path
 
-from .protocol import THERMOSTAT_COMMANDS, parse_report, serialize, validate_setting
+from .protocol import THERMOSTAT_COMMANDS, number, parse_report, serialize, validate_setting
 from .schedule_editor import edit, new_editor
 
 LOG = logging.getLogger(__name__)
@@ -201,9 +201,19 @@ class Store:
                 raise ValueError(f"No reported {key}; wait for a valid parameter report")
             updated = copy.deepcopy(settings[key])
             updated[0] = "Off" if value == "off" else "On"
+            original_target = None
+            if key == "TMP" and value == "heat":
+                original_target = number(updated[1])
+                if original_target is None:
+                    raise ValueError("TMP: a numeric target is required before enabling Heat")
+                updated[1] = round(min(30, max(7, original_target)), 1)
             if value != "off":
                 updated = validate_setting(key, updated)
-            return self._queue(record, {key: updated})
+            result = self._queue(record, {key: updated})
+            if original_target is not None and original_target != updated[1]:
+                LOG.warning("%s: enabling Heat queued corrected TMP target %s -> %s C",
+                            serial, original_target, updated[1])
+            return result
 
     def editor_command(self, serial, action, payload):
         with self.lock:

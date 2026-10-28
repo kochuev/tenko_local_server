@@ -19,8 +19,7 @@ OBSOLETE_DISCOVERY = (
     ("button", "cancel_pending"), ("button", "editor_apply_all"),
     ("number", "schedule_MO_01_hour"), ("binary_sensor", "status_heating"),
     ("binary_sensor", "heating_on"), ("switch", "constant_enabled"),
-    ("number", "constant_target"), ("switch", "pmt_enabled"),
-    ("number", "pmt_min"), ("number", "pmt_max"),
+    ("number", "constant_target"), ("climate", "minimum_thermostat"),
     ("select", "stage_resolution_source"), ("button", "resolve_stages"),
 )
 
@@ -152,7 +151,14 @@ class DockerFlowTests(unittest.TestCase):
             self.wait(lambda: self.latest.get(f"homeassistant/{kind}/tenko_211229_005/{key}/config") == "")
         with self.messages_lock:
             hours = json.loads(self.latest["homeassistant/select/tenko_211229_005/schedule_MO_01_hour/config"])
+            for kind, key in (("select", "mode"), ("select", "schedule_mode"),
+                              ("number", "flow_cutoff"), ("number", "return_hysteresis"),
+                              ("switch", "modulation"), ("switch", "manual_1"),
+                              ("number", "pump_start"), ("number", "pmt_min")):
+                payload = json.loads(self.latest[f"homeassistant/{kind}/tenko_211229_005/{key}/config"])
+                self.assertNotIn("entity_category", payload)
         self.assertEqual(hours["options"], [str(hour) for hour in range(24)])
+        self.assertEqual(hours["entity_category"], "config")
         self.assertEqual(self.http("/update/status", b"sn=211229_005&status=1"), "status updated")
         status_state = self.wait_state(lambda value: value["raw_status"] == "1")
         self.assertNotIn("status_heating", status_state)
@@ -269,7 +275,8 @@ class DockerFlowTests(unittest.TestCase):
     def test_thermostats_energy_and_debug_cleanup(self):
         with self.messages_lock:
             constant = json.loads(self.latest["homeassistant/climate/tenko_211229_005/constant_thermostat/config"])
-            minimum = json.loads(self.latest["homeassistant/climate/tenko_211229_005/minimum_thermostat/config"])
+            minimum = json.loads(self.latest["homeassistant/number/tenko_211229_005/pmt_min/config"])
+            maximum = json.loads(self.latest["homeassistant/number/tenko_211229_005/pmt_max/config"])
             energy = json.loads(self.latest["homeassistant/sensor/tenko_211229_005/period_amount/config"])
             migration = self.energy_discovery.copy()
             for key, name in (("clock", "Boiler clock"), ("frost", "AF-5"),
@@ -278,12 +285,18 @@ class DockerFlowTests(unittest.TestCase):
                 self.assertEqual(sensor["name"], name)
                 self.assertNotIn("entity_category", sensor)
                 self.assertEqual(sensor["unique_id"], f"tenko_211229_005_{key}")
+            for key in ("statistics_days", "day_amount", "week_amount") + tuple(f"month_{i}" for i in range(12)):
+                sensor = json.loads(self.latest[f"homeassistant/sensor/tenko_211229_005/{key}/config"])
+                self.assertEqual(sensor["device"], energy["device"])
+                self.assertEqual(sensor["entity_category"], "diagnostic")
         self.assertEqual(len(migration), 3)
         self.assertEqual(json.loads(migration[0])["device"]["identifiers"], ["tenko_211229_005"])
         self.assertEqual(migration[1], "")
         self.assertEqual(json.loads(migration[2]), energy)
         self.assertEqual((constant["min_temp"], constant["max_temp"], constant["temp_step"]), (7, 30, .1))
-        self.assertEqual(minimum["modes"], ["off", "heat_cool"])
+        self.assertEqual((minimum["min"], minimum["max"], minimum["step"]), (6, 15, 1))
+        self.assertEqual((maximum["min"], maximum["max"], maximum["step"]), (7, 17, 1))
+        self.assertEqual(self.latest["homeassistant/climate/tenko_211229_005/minimum_thermostat/config"], "")
         self.assertEqual(energy["device"]["name"], "TENKO Boiler Energy Meter")
         self.assertEqual(energy["device"]["via_device"], "tenko_211229_005")
         self.assertEqual(energy["unique_id"], "tenko_211229_005_period_amount")
@@ -295,6 +308,17 @@ class DockerFlowTests(unittest.TestCase):
 
         self.send("constant_target", "30.1")
         self.wait_state(lambda value: "7..30" in value["command_error"])
+        self.assertEqual(self.poll(), "nochange")
+        self.send("constant_mode", "heat")
+        self.wait_state(lambda value: value["constant_mode"] == "heat" and value["constant_target"] == 7)
+        self.assertIn(";TMP=On,7.0;", self.poll())
+        self.assertIn("queued corrected TMP target 6.9 -> 7.0", self.docker("logs", self.app))
+        self.raw["TMP"] = "On,7.0"
+        self.assertEqual(self.poll(), "nochange")
+        self.send("constant_mode", "off")
+        self.wait_state(lambda value: value["constant_mode"] == "off")
+        self.assertIn(";TMP=Off,7.0;", self.poll())
+        self.raw["TMP"] = "Off,7.0"
         self.assertEqual(self.poll(), "nochange")
         self.send("constant_target", "20.1")
         self.wait_state(lambda value: value["constant_target"] == 20.1)
@@ -312,17 +336,20 @@ class DockerFlowTests(unittest.TestCase):
         self.raw["TMP"] = "Off,20.1"
         self.assertEqual(self.poll(), "nochange")
 
-        self.send("minimum_low", "8")
+        self.send("pmt_min", "8")
         self.wait_state(lambda value: value["pmt_min"] == 8)
-        self.send("minimum_high", "12")
+        self.send("pmt_max", "12")
         self.wait_state(lambda value: value["pmt_max"] == 12)
-        self.send("minimum_mode", "heat_cool")
-        self.wait_state(lambda value: value["minimum_mode"] == "heat_cool")
+        self.send("pmt_max", "8")
+        values = self.wait_state(lambda value: "restart threshold" in value["command_error"])
+        self.assertEqual((values["pmt_min"], values["pmt_max"]), (8, 12))
+        self.send("pmt_enabled", "On")
+        self.wait_state(lambda value: value["pmt_enabled"] == "On")
         self.assertIn(";PMT=On,08,12;", self.poll())
         self.raw["PMT"] = "[On,8,12]"
         self.assertEqual(self.poll(), "nochange")
-        self.send("minimum_mode", "off")
-        self.wait_state(lambda value: value["minimum_mode"] == "off")
+        self.send("pmt_enabled", "Off")
+        self.wait_state(lambda value: value["pmt_enabled"] == "Off")
         self.assertIn(";PMT=Off,08,12;", self.poll())
         self.raw["PMT"] = "[Off,8,12]"
         self.assertEqual(self.poll(), "nochange")
@@ -342,10 +369,12 @@ class DockerFlowTests(unittest.TestCase):
         self.assertEqual(self.poll(), "nochange")
         values = self.wait_state(lambda value: "day_amount" not in value and "raw_status" not in value)
         self.assertIn("period_amount", values)
-        self.assertIn("pmt_temperature", values)
+        self.assertNotIn("pmt_temperature", values)
+        self.assertEqual((values["pmt_min"], values["pmt_max"], values["pmt_enabled"]), (8, 12, "Off"))
         self.assertNotIn("month_0", values)
         self.wait(lambda: self.latest.get("tenko/211229_005/diagnostics") == "")
-        for key in ("raw_fields", "stage_conflict", "day_amount", "month_0", "month_11"):
+        for key in ("raw_fields", "stage_conflict", "statistics_days", "day_amount", "week_amount") + tuple(
+                f"month_{i}" for i in range(12)):
             self.wait(lambda: self.latest.get(f"homeassistant/sensor/tenko_211229_005/{key}/config") == "")
         with self.messages_lock:
             for key in ("pump", "clock", "error", "frost", "period_amount"):
