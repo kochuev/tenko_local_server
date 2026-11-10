@@ -88,6 +88,7 @@ class DockerFlowTests(unittest.TestCase):
         self.start_app("debug")
         self.raw = form(next(line for line in (ROOT / "prompt.md").read_text().splitlines()
                              if line.startswith("sn=")).encode())
+        self.assertEqual(self.poll({**self.raw, "USE": "Temp"}), "nochange")
         self.assertEqual(self.poll(), "nochange")
         self.wait_state(lambda value: value.get("mode") == "Whole week")
 
@@ -144,8 +145,8 @@ class DockerFlowTests(unittest.TestCase):
         with urlopen(request, timeout=3) as response:
             return response.read().decode()
 
-    def poll(self):
-        return self.http("/update/param", urlencode(self.raw).encode())
+    def poll(self, raw=None):
+        return self.http("/update/param", urlencode(raw or self.raw).encode())
 
     def test_native_mqtt_schedule_lifecycle(self):
         for kind, key in OBSOLETE_DISCOVERY:
@@ -316,7 +317,7 @@ class DockerFlowTests(unittest.TestCase):
         self.wait_state(lambda value: value["constant_mode"] == "heat" and value["constant_target"] == 7)
         self.assertIn(";TMP=On,7.0;", self.poll())
         self.assertIn("queued corrected TMP target 6.9 -> 7.0", self.docker("logs", self.app))
-        self.raw["TMP"] = "On,7.0"
+        self.raw.update(USE="Temp", TMP="On,7.0")
         self.assertEqual(self.poll(), "nochange")
         self.send("constant_mode", "off")
         self.wait_state(lambda value: value["constant_mode"] == "off")

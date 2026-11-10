@@ -86,11 +86,16 @@ discovery. Control mode keeps its existing identity. Update custom cards or
 automations that reference `select.tenko_boiler_schedule_mode` to
 `select.tenko_boiler_control_mode` (or the corresponding ID in your registry).
 
-These controls show **accepted pending values** while a command is waiting
-for confirmation, otherwise boiler-reported values. A change queues a command
+Settings controls show **accepted pending values** while a command is waiting
+for confirmation, otherwise boiler-reported values. The constant-temperature
+control instead shows its separately saved setting. A change queues a command
 for the next boiler poll, without snapping the field back to the old value.
-The original reported settings remain separately available in DEBUG MQTT diagnostics;
-telemetry such as measured temperatures and actual heating is never overridden.
+The constant-temperature setting is stored separately from `TMP` reports made
+in schedule modes: those reports contain the schedule's effective temperature,
+not the saved constant target. Uploads preserve the saved target when changing
+or editing schedules. The original reported settings remain separately available
+in DEBUG MQTT diagnostics; telemetry such as measured temperatures and actual
+heating is never overridden.
 **Settings upload status** remains `pending` until a later parameter report
 confirms it. Inspect
 **Settings command error** if a command is rejected or not confirmed.
@@ -119,7 +124,15 @@ Reported values outside UI limits, such as the captured stored target 6.9 C,
 are retained in raw diagnostics without clamping; the thermostat target is
 unknown until it is valid. Enabling Heat corrects it as described above;
 explicit temperature commands outside 7-30 C are still rejected.
-Turning a thermostat off remains possible without rewriting its old setpoints.
+Turning a thermostat off remains possible without rewriting its old setpoints;
+an Off report confirms the mode even if firmware reports a different inactive
+target. The saved target remains available for a later switch to Constant
+temperature. `TMP` targets cannot be confirmed from reports while a schedule
+mode is active, so an explicit target change remains pending until Constant
+temperature is selected and the boiler reports that target.
+If upgrading while the latest report is already in a schedule mode and no
+saved constant setting is available, set the constant target explicitly before
+uploading other settings; the bridge will not infer it from the schedule.
 Old pending TMP commands outside 7-30 C are blocked with an explicit error
 rather than retransmitted; entering a valid target or enabling Heat with its
 automatic correction replaces the blocked command.

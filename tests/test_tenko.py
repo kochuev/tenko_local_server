@@ -31,6 +31,11 @@ def captured():
     return form(body.encode())
 
 
+def seed_constant_setting(store, raw):
+    store.report({**raw, "USE": "Temp", "TMP": "Off,6.9"})
+    return store.report(raw)
+
+
 class ProtocolTests(unittest.TestCase):
     def setUp(self):
         self.raw = captured()
@@ -137,7 +142,7 @@ class StoreTests(unittest.TestCase):
         self.store = Store(self.path)
         self.raw = captured()
         self.serial = self.raw["sn"]
-        self.record, _ = self.store.report(self.raw)
+        self.record, _ = seed_constant_setting(self.store, self.raw)
 
     def tearDown(self):
         self.store.close()
@@ -225,17 +230,108 @@ class StoreTests(unittest.TestCase):
         confirmed_raw = {**self.raw, "TMP": "[On,21.5]", "USE": "GraphW",
                          "MOD": "Off,Off,0,3", "FI": "[55,3]"}
         confirmed, response = self.store.report(confirmed_raw)
-        self.assertEqual(response, "nochange")
-        self.assertEqual(confirmed["command_state"], "applied")
-        self.assertEqual(confirmed["pending"], {})
+        self.assertTrue(response.startswith("NewData:"))
+        self.assertEqual(confirmed["command_state"], "pending")
+        self.assertEqual(confirmed["pending"], {"TMP": ["On", 21.5]})
         snapshots.append(confirmed)
         for snapshot in snapshots:
             with self.subTest(command_state=snapshot["command_state"]):
                 values = state(snapshot)
                 self.assertEqual({key: values[key] for key in expected}, expected)
-                self.assertEqual(values["modulated_power"], 0 if snapshot["command_state"] == "pending" else None)
-        record, _ = self.store.report({**confirmed_raw, "TMP": "[On,22.0]"})
+                self.assertEqual(values["modulated_power"],
+                                 0 if snapshot["report"]["decoded"]["MOD"][0] == "On" else None)
+        applied, response = self.store.report({**confirmed_raw, "USE": "Temp"})
+        self.assertEqual(response, "nochange")
+        self.assertEqual(applied["command_state"], "applied")
+        self.assertEqual(applied["pending"], {})
+        record, _ = self.store.report({**confirmed_raw, "USE": "Temp", "TMP": "[On,22.0]"})
         self.assertEqual(state(record)["constant_target"], 22)
+
+    def test_schedule_effective_temperature_never_replaces_constant_setting(self):
+        self.store.report({**self.raw, "USE": "Temp", "TMP": "On,21.5"})
+        record = self.store.component_command(self.serial, "USE", None, "GraphD")
+        _, response = self.store.report({**self.raw, "USE": "GraphD", "TMP": "On,40.0"})
+        self.assertIn(";TMP=On,21.5;", response)
+        record = self.store.get(self.serial)
+        self.assertEqual(record["constant_setting"], ["On", 21.5])
+        self.assertEqual(state(record)["constant_target"], 21.5)
+        self.assertEqual(record["report"]["settings"]["TMP"], ["On", 40.0])
+        self.store.component_command(self.serial, "USE", None, "Temp")
+        _, response = self.store.report({**self.raw, "USE": "GraphD", "TMP": "On,40.0"})
+        self.assertIn(";TMP=On,21.5;", response)
+        applied, _ = self.store.report({**self.raw, "USE": "Temp", "TMP": "On,21.5"})
+        self.assertEqual(applied["command_state"], "applied")
+        self.assertEqual(applied["pending"], {})
+
+    def test_schedule_switch_supersedes_stale_off_target_confirmation(self):
+        self.store.report({**self.raw, "TMP": "On,20.0"})
+        self.store.thermostat_command(self.serial, "constant_target", "10")
+        self.store.thermostat_command(self.serial, "constant_mode", "off")
+        self.store.report({**self.raw, "TMP": "On,20.0"})
+        record = self.store.component_command(self.serial, "USE", None, "GraphD")
+        self.assertEqual(record["pending"], {"USE": "GraphD"})
+        self.assertEqual(record["constant_setting"], ["Off", 10])
+        _, response = self.store.report({**self.raw, "USE": "GraphD", "TMP": "On,40.0"})
+        self.assertIn(";TMP=Off,10.0;", response)
+        applied, response = self.store.report({**self.raw, "USE": "GraphD", "TMP": "On,40.0"})
+        self.assertEqual(response, "nochange")
+        self.assertEqual(applied["command_state"], "applied")
+        self.assertEqual(applied["pending"], {})
+
+    def test_startup_migration_drops_stale_tmp_after_persisted_schedule_switch(self):
+        self.store.close()
+        data = json.loads(self.path.read_text())
+        data[self.serial].update(
+            pending={"USE": "GraphD", "TMP": ["Off", 10]},
+            pending_since={"USE": 1000, "TMP": 1000},
+            queued_at=1000,
+            sent_at=1001,
+            command_state="pending",
+        )
+        data[self.serial].pop("constant_setting")
+        self.path.write_text(json.dumps(data))
+        self.store = Store(self.path)
+        record = self.store.get(self.serial)
+        self.assertEqual(record["constant_setting"], ["Off", 10])
+        self.assertEqual(record["pending"], {"USE": "GraphD"})
+        self.assertNotIn("TMP", record["pending_since"])
+        applied, response = self.store.report({**self.raw, "USE": "GraphD", "TMP": "On,40.0"})
+        self.assertEqual(response, "nochange")
+        self.assertEqual(applied["command_state"], "applied")
+        self.assertEqual(applied["pending"], {})
+
+    def test_schedule_report_cannot_seed_constant_setting_or_select_temp(self):
+        serial = "schedule_only"
+        self.store.report({**self.raw, "sn": serial, "USE": "GraphD", "TMP": "On,40.0"})
+        self.assertIsNone(self.store.get(serial)["constant_setting"])
+        with self.assertRaisesRegex(ValueError, "target"):
+            self.store.component_command(serial, "USE", None, "Temp")
+        record = self.store.component_command(serial, "TMP", 1, "19")
+        self.assertEqual(record["constant_setting"], ["Off", 19])
+
+    def test_off_confirmation_ignores_target_but_preserves_requested_target(self):
+        self.store.report({**self.raw, "USE": "Temp", "TMP": "On,20.0"})
+        self.store.thermostat_command(self.serial, "constant_target", "10")
+        self.store.thermostat_command(self.serial, "constant_mode", "off")
+        self.store.report({**self.raw, "USE": "Temp", "TMP": "On,20.0"})
+        confirmed, _ = self.store.report({**self.raw, "USE": "Temp", "TMP": "Off,6.9"})
+        self.assertEqual(confirmed["command_state"], "applied")
+        self.assertEqual(confirmed["pending"], {})
+        self.assertEqual(confirmed["constant_setting"], ["Off", 10])
+        later, _ = self.store.report({**self.raw, "USE": "Temp", "TMP": "Off,6.9"})
+        self.assertEqual(later["constant_setting"], ["Off", 10])
+
+    def test_adding_command_does_not_reset_older_pending_timeout(self):
+        with patch("tenko.store.time.time", return_value=1000):
+            self.store.command(self.serial, {"MOD": "Off"})
+        with patch("tenko.store.time.time", return_value=1100):
+            self.store.command(self.serial, {"FI": [55, 3]})
+        record = self.store.get(self.serial)
+        self.assertEqual(record["pending_since"]["MOD"], 1000)
+        self.assertEqual(record["pending_since"]["FI"], 1100)
+        with patch("tenko.store.time.time", return_value=1601):
+            self.assertEqual(self.store.expire(), [self.serial])
+        self.assertIn("MOD", self.store.get(self.serial)["command_error"])
 
     def test_report_of_older_command_does_not_replace_newer_pending_value(self):
         self.store.component_command(self.serial, "TMP", 1, "21")
@@ -355,6 +451,7 @@ class HTTPTests(unittest.TestCase):
                             {"Content-Type": "application/x-www-form-urlencoded"})
 
     def test_boiler_response_exact_body_and_current_content_length(self):
+        seed_constant_setting(self.store, captured())
         status, body, headers = self.report()
         self.assertEqual((status, body), (200, b"nochange"))
         self.assertEqual(int(headers["Content-Length"]), len(body))
@@ -394,6 +491,7 @@ class HTTPTests(unittest.TestCase):
         self.assertEqual(self.request("POST", "/unknown-status", "sn=x&status=0")[0], 404)
 
     def test_http_debug_dumps_include_received_and_sent_payloads(self):
+        seed_constant_setting(self.store, captured())
         self.report()
         self.store.command(self.serial, {"MOD": "Off"})
         with self.assertLogs("tenko.server", level="DEBUG") as logs:
@@ -445,7 +543,7 @@ class MQTTTests(unittest.TestCase):
         self.store = Store(Path(self.temp.name) / "state.json")
         self.raw = captured()
         self.serial = self.raw["sn"]
-        self.record, _ = self.store.report(self.raw)
+        self.record, _ = seed_constant_setting(self.store, self.raw)
         self.config = Config()
         self.bridge = Bridge(self.config, self.store)
         self.messages = []
@@ -602,7 +700,10 @@ class MQTTTests(unittest.TestCase):
                 self.bridge.on_message(None, None, SimpleNamespace(
                     topic=f"tenko/{self.serial}/command/mode", payload=label.encode(), retain=False))
                 record = self.store.get(self.serial)
-                self.assertEqual(record["pending"], {"USE": wire})
+                expected = {"USE": wire}
+                if wire == "Temp":
+                    expected["TMP"] = ["Off", 6.9]
+                self.assertEqual(record["pending"], expected)
                 self.assertEqual(state(record)["mode"], label)
                 self.assertEqual(record["report"]["settings"]["USE"], self.raw["USE"])
                 self.assertEqual(record["command_state"], "pending")
@@ -625,7 +726,10 @@ class MQTTTests(unittest.TestCase):
                     self.bridge.on_message(None, None, SimpleNamespace(
                         topic=f"tenko/{self.serial}/command/{key}", payload=value.encode(), retain=False))
                     record = self.store.get(self.serial)
-                    self.assertEqual(record["pending"], {"USE": wire})
+                    expected = {"USE": wire}
+                    if wire == "Temp":
+                        expected["TMP"] = ["Off", 6.9]
+                    self.assertEqual(record["pending"], expected)
                     self.assertEqual(state(record)["mode"], label)
                     self.assertNotIn("schedule_mode", state(record))
 
@@ -716,7 +820,7 @@ class MQTTTests(unittest.TestCase):
         self.assertEqual(self.store.get(self.serial)["pending"]["TMP"], ["Off", 20.1])
 
     def test_thermostat_can_turn_off_without_rewriting_invalid_legacy_target(self):
-        self.store.report({**self.raw, "TMP": "On,6.9"})
+        self.store.report({**self.raw, "USE": "Temp", "TMP": "On,6.9"})
         record = self.store.thermostat_command(self.serial, "constant_mode", "off")
         self.assertEqual(record["pending"]["TMP"], ["Off", 6.9])
         self.assertEqual(state(record)["constant_thermostat"], "off")
@@ -728,7 +832,7 @@ class MQTTTests(unittest.TestCase):
     def test_enabling_heat_corrects_legacy_targets_and_waits_for_confirmation(self):
         for original, corrected in ((6.9, 7), (40, 30), (20.11, 20.1)):
             with self.subTest(original=original):
-                raw = {**self.raw, "TMP": f"Off,{original}"}
+                raw = {**self.raw, "USE": "Temp", "TMP": f"Off,{original}"}
                 self.store.report(raw)
                 with self.assertLogs("tenko.store", level="WARNING"):
                     record = self.store.thermostat_command(self.serial, "constant_mode", "heat")
@@ -742,10 +846,11 @@ class MQTTTests(unittest.TestCase):
                 self.assertEqual(record["command_state"], "applied")
 
     def test_enabling_heat_does_not_invent_a_missing_target(self):
-        self.store.report({**self.raw, "TMP": "Off,unknown"})
+        serial = "no_target"
+        self.store.report({**self.raw, "sn": serial, "USE": "Temp", "TMP": "Off,unknown"})
         with self.assertRaisesRegex(ValueError, "numeric target"):
-            self.store.thermostat_command(self.serial, "constant_mode", "heat")
-        self.assertFalse(self.store.get(self.serial)["pending"])
+            self.store.thermostat_command(serial, "constant_mode", "heat")
+        self.assertFalse(self.store.get(serial)["pending"])
 
     def test_minimum_temperature_inputs_have_exact_bounds_and_pair_validation(self):
         for key, low, high in (("pmt_min", 6, 15), ("pmt_max", 7, 17)):
@@ -1017,7 +1122,7 @@ class NativeEditorTests(unittest.TestCase):
         self.store = Store(self.path)
         self.raw = captured()
         self.serial = self.raw["sn"]
-        self.store.report(self.raw)
+        seed_constant_setting(self.store, self.raw)
 
     def tearDown(self):
         self.store.close()

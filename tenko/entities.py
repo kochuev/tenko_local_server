@@ -170,6 +170,13 @@ def state(record, config=None):
         return value if value in ("On", "Off") else None
 
     current = {**settings, **record["pending"]}
+    constant_setting = record.get("pending", {}).get("TMP", record.get("constant_setting"))
+    if constant_setting is None and settings.get("USE") == "Temp":
+        constant_setting = settings.get("TMP")
+    if constant_setting is None:
+        current.pop("TMP", None)
+    else:
+        current["TMP"] = constant_setting
     def component(key, index):
         value = current.get(key)
         return value[index] if isinstance(value, list) and len(value) > index else None

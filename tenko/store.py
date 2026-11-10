@@ -44,8 +44,37 @@ class Store:
             for serial, record in self.records.items():
                 if not isinstance(record, dict) or record.get("serial") != serial:
                     raise ValueError("Invalid boiler record in state file")
+                legacy_constant_state = "constant_setting" not in record
                 record.setdefault("schedule_editor", new_editor())
                 record.setdefault("status_report", {})
+                record.setdefault("constant_setting", None)
+                record.setdefault("pending_since", {
+                    key: record.get("queued_at") or time.time() for key in record.get("pending", {})
+                })
+                reported = record.get("report", {}).get("settings", {})
+                if (record["constant_setting"] is None
+                        and reported.get("USE") == "Temp"
+                        and isinstance(reported.get("TMP"), list)):
+                    record["constant_setting"] = copy.deepcopy(reported["TMP"])
+                pending_tmp = record.get("pending", {}).get("TMP")
+                if (record["constant_setting"] is None and isinstance(pending_tmp, list)
+                        and len(pending_tmp) == 2 and pending_tmp[0] == "Off"
+                        and number(pending_tmp[1]) is not None):
+                    record["constant_setting"] = copy.deepcopy(pending_tmp)
+                legacy_schedule_report = (
+                    legacy_constant_state
+                    and reported.get("USE") in ("GraphD", "GraphW")
+                )
+                if (legacy_schedule_report and isinstance(pending_tmp, list)
+                        and len(pending_tmp) == 2 and pending_tmp[0] == "Off"
+                        and number(pending_tmp[1]) is not None):
+                    record["constant_setting"] = copy.deepcopy(pending_tmp)
+                if legacy_schedule_report and record["pending"].pop("TMP", None) is not None:
+                    record["pending_since"].pop("TMP", None)
+                    if not record["pending"]:
+                        record.update(command_state="error",
+                                      command_error="Legacy TMP upload cannot be confirmed in schedule mode")
+                    self._refresh_queued_at(record)
                 if set(self._new(serial)) - record.keys():
                     raise ValueError(f"Incomplete persisted record for {serial}")
         except Exception:
@@ -84,7 +113,7 @@ class Store:
                 "last_status": None, "pending": {}, "sent_at": None, "queued_at": None,
                 "attempts": 0, "command_state": "idle", "command_error": None,
                 "draft": {}, "draft_revision": 0, "revision": 0, "schedule_editor": new_editor(),
-                "status_report": {}}
+                "status_report": {}, "constant_setting": None, "pending_since": {}}
 
     def get(self, serial):
         with self.lock:
@@ -104,6 +133,12 @@ class Store:
                 record = self._new(raw["sn"])
             record.update(report=report, last_report=now)
             record["revision"] += 1
+            reported_tmp = report["settings"].get("TMP")
+            if report["settings"].get("USE") == "Temp" and isinstance(reported_tmp, list):
+                if record["constant_setting"] is None or "TMP" not in record["pending"]:
+                    # Preserve the saved target when firmware substitutes its inactive 6.9 C sentinel.
+                    if record["constant_setting"] is None or reported_tmp != ["Off", 6.9]:
+                        record["constant_setting"] = copy.deepcopy(reported_tmp)
             if report["stage_conflict"]:
                 LOG.warning("%s: ST1/ST2 disagree with STU; using STU", raw["sn"])
             if report["parse_errors"]:
@@ -111,27 +146,53 @@ class Store:
                 self._write(record)
                 return record, "nochange"
             if record["pending"] and record["sent_at"] is not None:
-                if all(report["settings"].get(k) == v for k, v in record["pending"].items()):
-                    confirmed = [k for k, v in record["pending"].items() if record["draft"].get(k) == v]
-                    for key in confirmed:
+                confirmed = []
+                for key, value in record["pending"].items():
+                    reported = report["settings"].get(key)
+                    if key == "TMP":
+                        if report["settings"].get("USE") != "Temp" or not isinstance(reported, list):
+                            continue
+                        # The boiler reports the effective schedule temperature outside Temp
+                        # mode. With the constant thermostat off, only its mode is observable.
+                        matches = (reported[0] == "Off" if value[0] == "Off" else reported == value)
+                    else:
+                        matches = reported == value
+                    if matches:
+                        confirmed.append(key)
+                for key in confirmed:
+                    was_draft = record["draft"].get(key) == record["pending"][key]
+                    del record["pending"][key]
+                    record["pending_since"].pop(key, None)
+                    if was_draft:
                         del record["draft"][key]
-                    if confirmed:
                         record["draft_revision"] += 1
-                    record.update(pending={}, command_state="applied", command_error=None,
+                if not record["pending"] and confirmed:
+                    record.update(command_state="applied", command_error=None,
                                   sent_at=None, queued_at=None)
+                elif confirmed:
+                    record.update(command_state="pending", command_error=None)
+                self._refresh_queued_at(record)
             response = "nochange"
             if record["pending"]:
                 complete = {**report["settings"], **record["pending"]}
+                constant_setting = record["pending"].get("TMP", record["constant_setting"])
+                if constant_setting is None:
+                    record.update(command_state="error",
+                                  command_error="Set a constant temperature target before uploading settings")
+                    self._write(record)
+                    return record, "nochange"
+                complete["TMP"] = constant_setting
                 try:
-                    validate_pending_temperature(report["settings"], record["pending"])
+                    validate_pending_temperature(
+                        {"TMP": record["constant_setting"]}, record["pending"])
                     response = serialize(complete)
                     record["attempts"] += 1
                     if record["sent_at"] is None:
                         record["sent_at"] = now
-                    expired = now - record["queued_at"] > self.timeout
-                    record["command_state"] = "error" if expired else "pending"
+                    expired_key = self._expired_key(record, now)
+                    record["command_state"] = "error" if expired_key else "pending"
                     record["command_error"] = (
-                        "Confirmation timed out; settings remain pending and will be retried" if expired else None)
+                        self._timeout_message(record, expired_key) if expired_key else None)
                 except (ValueError, TypeError, OverflowError) as exc:
                     record.update(command_state="error", command_error=str(exc))
                     LOG.warning("%s: settings blocked: %s", raw["sn"], exc)
@@ -165,18 +226,62 @@ class Store:
         """Queue a validated patch, preserving unchanged reported components."""
         if not record["report"] or record["report"]["parse_errors"]:
             raise ValueError("A valid parameter report is required before setting controls")
-        candidate = {**record["report"]["settings"], **record["pending"], **patch}
-        validate_pending_temperature(record["report"]["settings"], {**record["pending"], **patch})
+        now = time.time()
+        pending = {**record["pending"], **patch}
+        if "TMP" in patch:
+            record["constant_setting"] = copy.deepcopy(patch["TMP"])
+        mode = pending.get("USE", record["report"]["settings"].get("USE"))
+        if mode in ("GraphD", "GraphW") and "USE" in patch and "TMP" not in patch:
+            pending.pop("TMP", None)
+            record["pending_since"].pop("TMP", None)
+        if mode == "Temp" and "USE" in patch and "TMP" not in pending:
+            if record["constant_setting"] is None:
+                raise ValueError("Set a constant temperature target before selecting Constant temperature")
+            pending["TMP"] = copy.deepcopy(record["constant_setting"])
+        constant_setting = pending.get("TMP", record["constant_setting"])
+        if constant_setting is None:
+            raise ValueError("Set a constant temperature target before uploading settings")
+        candidate = {**record["report"]["settings"], **record["pending"], **patch,
+                     "TMP": constant_setting}
+        validate_pending_temperature({"TMP": record["constant_setting"]}, pending)
         serialize(candidate)
-        record.update(pending={**record["pending"], **patch}, sent_at=None,
-                      queued_at=time.time(), attempts=0, command_state="pending", command_error=None)
+        for key, value in pending.items():
+            if record["pending"].get(key) != value or key not in record["pending_since"]:
+                record["pending_since"][key] = now
+        record["pending"] = pending
+        self._refresh_queued_at(record)
+        record.update(sent_at=None, attempts=0,
+                      command_state="pending" if pending else "applied", command_error=None)
         record["revision"] += 1
         self._write(record)
         return record
 
+    @staticmethod
+    def _refresh_queued_at(record):
+        record["queued_at"] = min(record["pending_since"].values(), default=None)
+
+    def _expired_key(self, record, now):
+        return next((key for key, queued_at in record["pending_since"].items()
+                     if now - queued_at > self.timeout), None)
+
+    def _timeout_message(self, record, key):
+        requested = record["pending"].get(key)
+        reported = record.get("report", {}).get("settings", {}).get(key)
+        return (f"Confirmation timed out for {key}: requested {requested!r}, "
+                f"last reported {reported!r}; settings remain pending and will be retried")
+
     def component_command(self, serial, key, index, value):
         with self.lock:
             record = self._read(serial)
+            if key == "TMP":
+                settings = record["pending"].get("TMP", record["constant_setting"])
+                if not isinstance(settings, list) or len(settings) != 2:
+                    if index != 1:
+                        raise ValueError("Set a constant temperature target before choosing a thermostat mode")
+                    settings = ["Off", None]
+                updated = copy.deepcopy(settings)
+                updated[index] = value
+                return self.command(serial, {key: updated})
             settings = {**record.get("report", {}).get("settings", {}), **record["pending"]}
             if index is None:
                 updated = value
@@ -197,6 +302,12 @@ class Store:
         with self.lock:
             record = self._read(serial)
             settings = {**record.get("report", {}).get("settings", {}), **record["pending"]}
+            if key == "TMP":
+                constant_setting = record["pending"].get("TMP", record["constant_setting"])
+                if isinstance(constant_setting, list):
+                    settings[key] = constant_setting
+                elif record.get("report", {}).get("settings", {}).get("USE") != "Temp":
+                    raise ValueError("Set a constant temperature target before choosing a thermostat mode")
             if key not in settings:
                 raise ValueError(f"No reported {key}; wait for a valid parameter report")
             updated = copy.deepcopy(settings[key])
@@ -237,11 +348,10 @@ class Store:
             changed = []
             for serial in self.records:
                 record = self._read(serial)
-                if (record["pending"] and record["queued_at"]
-                        and time.time() - record["queued_at"] > self.timeout
-                        and record["command_state"] != "error"):
+                expired_key = self._expired_key(record, time.time())
+                if record["pending"] and expired_key and record["command_state"] != "error":
                     record.update(command_state="error",
-                                  command_error="Confirmation timed out; settings remain pending and will be retried")
+                                  command_error=self._timeout_message(record, expired_key))
                     self._write(record)
                     changed.append(serial)
             return changed
