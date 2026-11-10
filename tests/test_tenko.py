@@ -1212,12 +1212,20 @@ class NativeEditorTests(unittest.TestCase):
         self.assertEqual(state(self.store.get(self.serial))["schedule_ED_validation"], "invalid")
         record = self.edit("schedule_ED_01_target", "20")
         self.assertEqual([p[0] for p in record["pending"]["ED"][:3]], [0, 0, 0])
-        before = self.store.get(self.serial)
-        with self.assertRaisesRegex(ValueError, "neighboring"):
-            self.edit("schedule_ED_02_hour", "1")
-        self.assertEqual(self.store.get(self.serial), before)
         _, response = self.store.report(self.raw)
         self.assertIn(";ED=00,20.0/00,40.0/00,40.0/", response)
+
+    def test_out_of_order_reported_hours_can_be_repaired_point_by_point(self):
+        hours = [21, 0, 0, 0, 0, 20, 7, 0, 0, 11]
+        self.raw["SU"] = "[" + ",".join(f"[{hour:02d},20.0]" for hour in hours) + "];"
+        self.store.report(self.raw)
+        self.assertEqual(state(self.store.get(self.serial))["schedule_SU_validation"], "invalid")
+        for slot in range(1, 11):
+            record = self.edit(f"schedule_SU_{slot:02d}_hour", str(slot - 1))
+        self.assertEqual([point[0] for point in record["pending"]["SU"]], list(range(10)))
+        self.assertEqual(state(record)["schedule_SU_validation"], "valid")
+        with self.assertRaisesRegex(ValueError, "neighboring"):
+            self.edit("schedule_SU_02_hour", "5")
 
     def test_confirmation_clears_pending_without_an_apply_button(self):
         self.edit("schedule_MO_01_hour", "1")

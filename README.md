@@ -168,17 +168,18 @@ expose all ten displayed points and the separate reported and pending arrays.
 Exactly ten slots must be supplied, with strictly increasing whole-hour times.
 A target is **0 = OFF**, or **7-40 C** in steps of 0.1. Values between 0 and 7
 other than zero are rejected, even though a native number's min/max UI cannot
-represent that gap. **An hour change must remain strictly between its
-neighbors**; duplicate or out-of-order choices are rejected, the field
-returns to its accepted value, and Settings command error explains why.
-When shifting several points, move them in an order that avoids conflicts,
-or submit a complete valid day atomically through MQTT.
+represent that gap. **When a day's hours are strictly increasing, an hour
+change must remain strictly between its neighbors**; duplicate or out-of-order
+choices are rejected, the field returns to its accepted value, and Settings
+command error explains why. When shifting several points, move them in an
+order that avoids conflicts, or submit a complete valid day atomically through MQTT.
 
-Existing duplicate hours from boiler reports are preserved and flagged by
-schedule validation, not silently sorted or deduplicated. Editing a target
-does not rewrite unrelated hours. An hour can only be changed to one that
-fits its neighbors, allowing existing duplicates to be corrected explicitly.
-Full schedule patches through MQTT require all ten hours to be strictly
+Existing duplicate or out-of-order hours from boiler reports are preserved and
+flagged by schedule validation, not silently sorted or deduplicated. Editing a
+target does not rewrite unrelated hours. While a day is invalid, any hour 0-23
+is accepted so it can be repaired point by point (for example, setting slots
+1-10 in order); once its hours are strictly increasing again, the neighbor rule
+applies. Full schedule patches through MQTT require all ten hours to be strictly
 increasing.
 
 Pending uploads survive bridge restarts and keep retrying until confirmed.

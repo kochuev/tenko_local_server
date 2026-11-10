@@ -20,6 +20,10 @@ def points(record, day):
             or record.get("report", {}).get("settings", {}).get(day))
 
 
+def hours_increasing(selected):
+    return all(a[0] < b[0] for a, b in zip(selected, selected[1:]))
+
+
 def layer(record, day):
     if day in record["pending"]:
         return "pending"
@@ -71,7 +75,9 @@ def edit(record, action, payload):
             if value is None or value != int(value) or not 0 <= value <= 23:
                 raise ValueError("Hour must be a whole number 0..23")
             value = int(value)
-            if value != selected[slot][0] and (
+            # Out-of-order days are edited freely so they can be repaired; once
+            # hours are strictly increasing, edits must keep them that way.
+            if value != selected[slot][0] and hours_increasing(selected) and (
                 (slot > 0 and value <= selected[slot - 1][0])
                 or (slot < 9 and value >= selected[slot + 1][0])
             ):
