@@ -23,10 +23,10 @@ def schedule_view():
         "  - title: Schedule", "    path: schedule", "    type: sections", "    max_columns: 3",
         "    sections:", "      - type: grid", "        cards:",
         "          - type: heading", "            heading: Schedule",
-        "          - type: entities", "            title: Mode and upload",
+        "          - type: entities", "            title: Upload status",
         "            entities:",
     ]
-    for key in ("schedule_mode", "command_state", "command_error"):
+    for key in ("command_state", "command_error"):
         lines.append(f"              - {entity_id(key)}")
     lines.extend([
         "          - type: markdown",

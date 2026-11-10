@@ -55,9 +55,8 @@ views:
           - type: heading
             heading: Schedule
           - type: entities
-            title: Mode and upload
+            title: Upload status
             entities:
-              - select.tenko_boiler_schedule_mode
               - sensor.tenko_boiler_settings_upload_status
               - sensor.tenko_boiler_settings_command_error
           - type: markdown

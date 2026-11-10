@@ -2,7 +2,9 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 
 from .protocol import SCHEDULES, number
-from .schedule_editor import DAY_NAMES, POINT_CONTROLS, SCHEDULE_MODES, editor_state
+from .schedule_editor import DAY_NAMES, POINT_CONTROLS, editor_state
+
+CONTROL_MODES = {"Whole week": "GraphD", "Individual days": "GraphW", "Constant temperature": "Temp"}
 
 
 @dataclass(frozen=True)
@@ -82,7 +84,8 @@ def control(key, name, setting, index=None, kind="number", low=None, high=None, 
                            index=index, minimum=low, maximum=high, step=step))
 
 
-control("mode", "Control mode", "USE", kind="select")
+ENTITIES.append(Entity("mode", "Control mode", kind="select",
+                       setting="USE", options=tuple(CONTROL_MODES)))
 control("pmt_enabled", "Maintaining Minimum Temperature enabled", "PMT", 0, "switch")
 control("pmt_min", "Maintaining Minimum Temperature min", "PMT", 1, low=6, high=15, unit="°C")
 control("pmt_max", "Maintaining Minimum Temperature max", "PMT", 2, low=7, high=17, unit="°C")
@@ -94,10 +97,6 @@ control("manual_1", "Manual stage 1 enable (modulation off only)", "STU", 0, "sw
 control("manual_2", "Manual stage 2 enable (modulation off only)", "STU", 1, "switch")
 control("pump_start", "Pump lead-in delay", "pNA", 0, low=1, high=15, unit="min")
 control("pump_stop", "Pump run-on delay", "pNA", 1, low=1, high=15, unit="min")
-ENTITIES.extend([
-    Entity("schedule_mode", "Schedule mode", kind="select",
-           setting="USE", options=tuple(SCHEDULE_MODES)),
-])
 for key, (day, slot, component) in POINT_CONTROLS.items():
     field = "hour" if component == 0 else "target (0=OFF)"
     ENTITIES.append(Entity(
@@ -116,6 +115,7 @@ RECREATE_ENTITIES = ("pump", "frost", "error", "clock") + tuple(
     entity.key for entity in ENTITIES
     if entity.energy_device or (entity.setting and entity.key not in POINT_CONTROLS))
 REMOVED_ENTITIES = (
+    ("select", "schedule_mode"),
     ("select", "editor_day"), ("select", "editor_slot"), ("select", "editor_copy_to"),
     ("number", "editor_hour"), ("number", "editor_target"), ("switch", "editor_off"),
     ("button", "editor_apply_day"), ("button", "editor_discard_day"),
@@ -224,10 +224,8 @@ def state(record, config=None):
                 value = number(value)
             elif entity.kind == "switch" and value not in ("On", "Off"):
                 value = None
-            elif entity.kind == "select" and value not in ("Temp", "GraphD", "GraphW"):
-                value = None
-            if entity.key == "schedule_mode":
-                value = {wire: label for label, wire in SCHEDULE_MODES.items()}.get(value)
+            elif entity.key == "mode":
+                value = {wire: label for label, wire in CONTROL_MODES.items()}.get(value)
             values[entity.key] = value
     values.update(editor_state(record))
     if config is not None:
@@ -283,7 +281,7 @@ def discovery(entity, serial, firmware, config):
     if entity.kind == "number":
         payload.update(min=entity.minimum, max=entity.maximum, step=entity.step, mode="box")
     if entity.kind == "select":
-        payload["options"] = list(entity.options) if entity.options else ["Temp", "GraphD", "GraphW"]
+        payload["options"] = list(entity.options)
         payload.pop("optimistic", None)
     if entity.kind == "climate":
         payload.pop("state_topic")

@@ -45,7 +45,7 @@ dashboard using HA's raw configuration editor; adapt entity IDs to your registry
 It includes separate **Boiler** and **Schedule** views, with no custom cards.
 The built-in device page has fixed HA sections: MQTT discovery cannot add
 custom schedule sections or control their sorting. All editable settings,
-including Control mode and Schedule mode, belong to Controls except schedule
+including Control mode, belong to Controls except schedule
 point hours/targets, which remain in Configuration with their schedule status.
 Operational readings are Sensors. Diagnostic entities exist only with
 `LOG_LEVEL=DEBUG`. Startup migration clears retained Configuration categories
@@ -73,13 +73,18 @@ still chooses constant versus scheduled operation.
 
 **Power Modulation Mode** and the two manual-stage permissions remain switches.
 Flow/return cutoff and restart-drop values and pump delays remain numbers.
-A select chooses:
+**Control mode** is the single selector for the boiler's `USE` setting:
 
-| Control mode | Meaning |
-|---|---|
-| `Temp` | Constant air-temperature target |
-| `GraphD` | Repeating daily timetable, ED |
-| `GraphW` | Weekly Monday-Sunday timetables, MO-SU |
+| Control mode | Wire value | Meaning |
+|---|---|---|
+| Whole week | `GraphD` | Repeating daily timetable, ED |
+| Individual days | `GraphW` | Weekly Monday-Sunday timetables, MO-SU |
+| Constant temperature | `Temp` | Constant air-temperature target |
+
+The former **Schedule mode** entity is removed automatically through MQTT
+discovery. Control mode keeps its existing identity. Update custom cards or
+automations that reference `select.tenko_boiler_schedule_mode` to
+`select.tenko_boiler_control_mode` (or the corresponding ID in your registry).
 
 These controls show **accepted pending values** while a command is waiting
 for confirmation, otherwise boiler-reported values. A change queues a command
@@ -138,11 +143,8 @@ You can edit inactive schedules without activating them.
 There are no drafts or Apply/Discard buttons. The boiler receives the updated
 settings on its next parameter poll. Upload status remains `pending` until
 a subsequent report confirms the values, then becomes `applied`.
-**Schedule mode** selects **Whole week** (`GraphD`, ED repeated daily) or
-**Individual days** (`GraphW`, Monday-Sunday). **Constant temperature** (`Temp`)
-is also shown so an existing nonschedule mode is represented accurately.
-This selector and the ordinary Control mode select configure the same USE
-setting, and both show the same accepted pending or reported value.
+The **Schedule** dashboard view focuses on timetable editing and upload status;
+the single **Control mode** selector is in the Boiler view's Settings card.
 
 Point fields show **pending values** while an accepted change is waiting for
 confirmation, otherwise boiler-reported values. Each day's **schedule layer**
@@ -254,7 +256,7 @@ Ordinary command keys:
 
 | Keys | Wire field |
 |---|---|
-| `mode` | USE |
+| `mode` | USE; accepts `Whole week`, `Individual days`, or `Constant temperature` |
 | `constant_mode`, `constant_target` | TMP[0/1]; mode payload is `off` or `heat` |
 | `flow_cutoff`, `flow_hysteresis` | FI[0/1] |
 | `return_cutoff`, `return_hysteresis` | RE[0/1] |
@@ -263,6 +265,11 @@ Ordinary command keys:
 | `manual_1`, `manual_2` | STU[0/1] |
 | `pump_start`, `pump_stop` | pNA[0/1] |
 
+The `mode` state uses readable labels. For existing MQTT automations, the
+`mode` command also accepts `GraphD`, `GraphW`, and `Temp`; the old
+`schedule_mode` command key remains an alias without discovering a second
+entity. Atomic `command/settings` patches continue to use raw `USE` values.
+
 The former thermostat command keys `minimum_mode` (`off` / `heat_cool`),
 `minimum_low` and `minimum_high` remain accepted as compatibility aliases,
 but no range thermostat is discovered.
@@ -270,8 +277,7 @@ but no range thermostat is discovered.
 Schedule point commands use `schedule_<DAY>_<POINT>_hour` and
 `schedule_<DAY>_<POINT>_target`, e.g. `schedule_MO_01_hour` with `6` and
 `schedule_MO_01_target` with `21.5`. DAY is ED/MO/TU/WE/TH/FR/SA/SU;
-POINT is 01-10. `schedule_mode` accepts `Whole week`, `Individual days`, or
-`Constant temperature`.
+POINT is 01-10.
 
 Schedule point commands queue immediately; no apply/discard commands exist.
 There are no apply, discard, conflict-resolution or cancel buttons.

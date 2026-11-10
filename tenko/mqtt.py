@@ -5,9 +5,11 @@ import time
 
 import paho.mqtt.client as mqtt
 
-from .entities import BY_KEY, ENTITIES, RECREATE_ENTITIES, REMOVED_ENTITIES, discovery, enabled_entities, state
+from .entities import (
+    BY_KEY, CONTROL_MODES, ENTITIES, RECREATE_ENTITIES, REMOVED_ENTITIES, discovery, enabled_entities, state,
+)
 from .protocol import SCHEDULES, SERIAL, THERMOSTAT_COMMANDS
-from .schedule_editor import SCHEDULE_MODES, details
+from .schedule_editor import details
 
 LOG = logging.getLogger(__name__)
 
@@ -110,7 +112,7 @@ class Bridge:
             elif key in THERMOSTAT_COMMANDS:
                 self.store.thermostat_command(serial, key, payload)
             else:
-                entity = BY_KEY.get(key)
+                entity = BY_KEY.get("mode" if key == "schedule_mode" else key)
                 if not entity or not (entity.setting or entity.action):
                     raise ValueError(f"Unknown control: {key}")
                 if entity.action:
@@ -118,10 +120,11 @@ class Bridge:
                         raise ValueError("Button payload must be PRESS")
                     self.store.editor_command(serial, entity.action, payload)
                 else:
-                    if key == "schedule_mode":
-                        if payload not in SCHEDULE_MODES:
+                    if entity.key == "mode":
+                        if payload in CONTROL_MODES:
+                            payload = CONTROL_MODES[payload]
+                        elif payload not in CONTROL_MODES.values():
                             raise ValueError("Choose Whole week, Individual days, or Constant temperature")
-                        payload = SCHEDULE_MODES[payload]
                     self.store.component_command(serial, entity.setting, entity.index, payload)
         except (ValueError, KeyError, UnicodeError) as exc:
             LOG.warning("Rejected MQTT command %s: %s", message.topic, exc)

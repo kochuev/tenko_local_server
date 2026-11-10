@@ -206,7 +206,7 @@ class StoreTests(unittest.TestCase):
     def test_controls_keep_accepted_values_through_upload_status_and_restart(self):
         desired = {"TMP": ["On", 21.5], "USE": "GraphW", "MOD": "Off", "FI": [55, 3]}
         expected = {"constant_enabled": "On", "constant_target": 21.5,
-                    "mode": "GraphW", "schedule_mode": "Individual days",
+                    "mode": "Individual days",
                     "modulation": "Off", "flow_cutoff": 55, "flow_hysteresis": 3}
         record = self.store.command(self.serial, desired)
         snapshots = [record]
@@ -572,18 +572,89 @@ class MQTTTests(unittest.TestCase):
         self.assertEqual(self.store.get(self.serial)["pending"], {"MOD": "Off"})
         self.assertEqual(self.store.get(self.serial)["command_state"], "error")
 
-    def test_schedule_mode_uses_wire_values_and_keeps_pending_selection(self):
-        self.assertEqual(state(self.record)["schedule_mode"], "Whole week")
-        self.bridge.on_message(None, None, SimpleNamespace(
-            topic=f"tenko/{self.serial}/command/schedule_mode", payload=b"Individual days", retain=False))
-        record = self.store.get(self.serial)
-        self.assertEqual(record["pending"]["USE"], "GraphW")
-        self.assertEqual(state(record)["schedule_mode"], "Individual days")
-        self.assertEqual(state(record)["mode"], "GraphW")
-        self.assertEqual(record["report"]["settings"]["USE"], "GraphD")
-        self.store.report(self.raw)
-        record, _ = self.store.report({**self.raw, "USE": "GraphW"})
-        self.assertEqual(state(record)["schedule_mode"], "Individual days")
+    def test_control_mode_is_single_select_with_readable_labels_and_stable_identity(self):
+        self.assertEqual([entity.key for entity in ENTITIES if entity.setting == "USE"], ["mode"])
+        self.assertNotIn("schedule_mode", BY_KEY)
+        self.assertIn(("select", "schedule_mode"), REMOVED_ENTITIES)
+        self.bridge.connected = True
+        for level in ("INFO", "DEBUG"):
+            with self.subTest(level=level):
+                self.bridge.config = Config(log_level=level)
+                self.messages.clear()
+                self.bridge.emit(self.serial, discover=True)
+                published = dict(self.messages)
+                self.assertEqual(published[f"homeassistant/select/tenko_{self.serial}/schedule_mode/config"], "")
+                payload = published[f"homeassistant/select/tenko_{self.serial}/mode/config"]
+                self.assertEqual(payload["name"], "Control mode")
+                self.assertEqual(payload["unique_id"], f"tenko_{self.serial}_mode")
+                self.assertEqual(payload["options"], ["Whole week", "Individual days", "Constant temperature"])
+                self.assertEqual(payload["command_topic"], f"tenko/{self.serial}/command/mode")
+                self.assertEqual(payload["value_template"], "{{ value_json.mode }}")
+                values = published[f"tenko/{self.serial}/state"]
+                self.assertEqual(values["mode"], "Whole week")
+                self.assertNotIn("schedule_mode", values)
+
+    def test_control_mode_uses_wire_values_and_keeps_pending_selection(self):
+        self.assertEqual(state(self.record)["mode"], "Whole week")
+        for label, wire in (("Individual days", "GraphW"), ("Constant temperature", "Temp"),
+                            ("Whole week", "GraphD")):
+            with self.subTest(label=label):
+                self.bridge.on_message(None, None, SimpleNamespace(
+                    topic=f"tenko/{self.serial}/command/mode", payload=label.encode(), retain=False))
+                record = self.store.get(self.serial)
+                self.assertEqual(record["pending"], {"USE": wire})
+                self.assertEqual(state(record)["mode"], label)
+                self.assertEqual(record["report"]["settings"]["USE"], self.raw["USE"])
+                self.assertEqual(record["command_state"], "pending")
+                record, response = self.store.report(self.raw)
+                self.assertTrue(response.startswith(f"NewData:USE={wire};"))
+                self.assertEqual(state(record)["mode"], label)
+                self.assertEqual(record["command_state"], "pending")
+                self.raw["USE"] = wire
+                record, response = self.store.report(self.raw)
+                self.assertEqual(response, "nochange")
+                self.assertEqual(record["pending"], {})
+                self.assertEqual(record["command_state"], "applied")
+                self.assertEqual(state(record)["mode"], label)
+
+    def test_legacy_mode_commands_remain_accepted_without_duplicate_state(self):
+        for label, wire in (("Whole week", "GraphD"), ("Individual days", "GraphW"),
+                            ("Constant temperature", "Temp")):
+            for key, value in (("mode", wire), ("schedule_mode", label)):
+                with self.subTest(key=key, value=value):
+                    self.bridge.on_message(None, None, SimpleNamespace(
+                        topic=f"tenko/{self.serial}/command/{key}", payload=value.encode(), retain=False))
+                    record = self.store.get(self.serial)
+                    self.assertEqual(record["pending"], {"USE": wire})
+                    self.assertEqual(state(record)["mode"], label)
+                    self.assertNotIn("schedule_mode", state(record))
+
+    def test_invalid_mode_commands_preserve_pending_selection(self):
+        self.store.command(self.serial, {"USE": "GraphW"})
+        for value in ("", "unknown", "whole week", "Temp;MOD=On"):
+            with self.subTest(value=value):
+                self.bridge.on_message(None, None, SimpleNamespace(
+                    topic=f"tenko/{self.serial}/command/mode", payload=value.encode(), retain=False))
+                record = self.store.get(self.serial)
+                self.assertEqual(record["pending"], {"USE": "GraphW"})
+                self.assertEqual(state(record)["mode"], "Individual days")
+                self.assertEqual(record["command_state"], "error")
+                self.assertIn("Choose Whole week, Individual days, or Constant temperature", record["command_error"])
+
+    def test_retained_mode_commands_are_not_replayed(self):
+        for key, value in (("mode", "Constant temperature"), ("mode", "Temp"),
+                           ("schedule_mode", "Individual days")):
+            with self.subTest(key=key, value=value):
+                self.bridge.on_message(None, None, SimpleNamespace(
+                    topic=f"tenko/{self.serial}/command/{key}", payload=value.encode(), retain=True))
+                self.assertEqual(self.store.get(self.serial)["pending"], {})
+                self.assertEqual(state(self.store.get(self.serial))["mode"], "Whole week")
+
+    def test_unknown_or_missing_control_mode_has_no_default_selection(self):
+        for raw in ({"sn": self.serial}, {**self.raw, "USE": "unknown"}):
+            with self.subTest(raw=raw):
+                record, _ = self.store.report(raw)
+                self.assertIsNone(state(record)["mode"])
 
     def test_status_only_entities_use_status_freshness(self):
         payload = discovery(BY_KEY["raw_status"], self.serial, None, self.config)
@@ -887,6 +958,12 @@ class ConfigTests(unittest.TestCase):
 
 
 class DashboardTests(unittest.TestCase):
+    def test_dashboard_has_one_control_mode_selector(self):
+        dashboard = (ROOT / "examples/home-assistant.yaml").read_text()
+        self.assertEqual(dashboard.count(entity_id("mode")), 1)
+        self.assertNotIn("tenko_boiler_schedule_mode", dashboard)
+        self.assertNotIn(entity_id("mode"), dashboard.split(MARKER)[1])
+
     def test_boiler_cards_use_thermostats_and_linked_energy_device(self):
         dashboard = (ROOT / "examples/home-assistant.yaml").read_text().split(MARKER)[0]
         self.assertEqual(dashboard.count("- type: thermostat"), 1)

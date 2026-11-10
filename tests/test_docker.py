@@ -16,6 +16,7 @@ from tenko.protocol import form, parse_report
 
 ROOT = Path(__file__).resolve().parents[1]
 OBSOLETE_DISCOVERY = (
+    ("select", "schedule_mode"),
     ("button", "cancel_pending"), ("button", "editor_apply_all"),
     ("number", "schedule_MO_01_hour"), ("binary_sensor", "status_heating"),
     ("binary_sensor", "heating_on"), ("switch", "constant_enabled"),
@@ -88,7 +89,7 @@ class DockerFlowTests(unittest.TestCase):
         self.raw = form(next(line for line in (ROOT / "prompt.md").read_text().splitlines()
                              if line.startswith("sn=")).encode())
         self.assertEqual(self.poll(), "nochange")
-        self.wait_state(lambda value: value.get("schedule_mode") == "Whole week")
+        self.wait_state(lambda value: value.get("mode") == "Whole week")
 
     def start_app(self, level):
         self.docker("run", "-d", "--name", self.app, "--network", self.network,
@@ -151,7 +152,7 @@ class DockerFlowTests(unittest.TestCase):
             self.wait(lambda: self.latest.get(f"homeassistant/{kind}/tenko_211229_005/{key}/config") == "")
         with self.messages_lock:
             hours = json.loads(self.latest["homeassistant/select/tenko_211229_005/schedule_MO_01_hour/config"])
-            for kind, key in (("select", "mode"), ("select", "schedule_mode"),
+            for kind, key in (("select", "mode"),
                               ("number", "flow_cutoff"), ("number", "return_hysteresis"),
                               ("switch", "modulation"), ("switch", "manual_1"),
                               ("number", "pump_start"), ("number", "pmt_min")):
@@ -159,6 +160,7 @@ class DockerFlowTests(unittest.TestCase):
                 self.assertNotIn("entity_category", payload)
         self.assertEqual(hours["options"], [str(hour) for hour in range(24)])
         self.assertEqual(hours["entity_category"], "config")
+        self.assertNotIn("schedule_mode", self.topic_json("state"))
         self.assertEqual(self.http("/update/status", b"sn=211229_005&status=1"), "status updated")
         status_state = self.wait_state(lambda value: value["raw_status"] == "1")
         self.assertNotIn("status_heating", status_state)
@@ -203,7 +205,8 @@ class DockerFlowTests(unittest.TestCase):
                 payload = json.loads(self.latest[f"homeassistant/binary_sensor/tenko_211229_005/{key}/config"])
                 self.assertNotIn("device_class", payload)
 
-        self.send("schedule_mode", "Individual days")
+        self.send("mode", "Individual days")
+        self.wait_state(lambda value: value["mode"] == "Individual days" and value["command_state"] == "pending")
         self.wait(lambda: self.topic_json("diagnostics")["pending"].get("USE") == "GraphW")
         self.send("editor_discard_all", "PRESS")
         self.wait_state(lambda value: "editor_discard_all" in value["command_error"])
@@ -213,7 +216,7 @@ class DockerFlowTests(unittest.TestCase):
         self.assertIn("USE=GraphW", self.poll())
         self.raw["USE"] = "GraphW"
         self.assertEqual(self.poll(), "nochange")
-        self.wait_state(lambda value: value["schedule_mode"] == "Individual days"
+        self.wait_state(lambda value: value["mode"] == "Individual days"
                         and value["command_state"] == "applied")
 
         reported_fi = parse_report(self.raw)["settings"]["FI"]
@@ -256,15 +259,15 @@ class DockerFlowTests(unittest.TestCase):
             self.latest.clear()
         self.docker("restart", self.broker)
         self.connect_observer()
-        topic = "homeassistant/select/tenko_211229_005/schedule_mode/config"
-        def editor_discovery():
+        topic = "homeassistant/select/tenko_211229_005/mode/config"
+        def control_mode_discovery():
             with self.messages_lock:
                 return json.loads(self.latest[topic])
-        payload = self.wait(editor_discovery)
+        payload = self.wait(control_mode_discovery)
         self.assertEqual(payload["options"], ["Whole week", "Individual days", "Constant temperature"])
         self.assertNotIn("configuration_url", payload["device"])
         self.wait_state(lambda value: value["schedule_MO_01_target"] == 21
-                        and value["schedule_mode"] == "Individual days"
+                        and value["mode"] == "Individual days"
                         and value["flow_cutoff"] == desired_cutoff and value["command_state"] == "pending")
         self.assertTrue(self.poll().startswith("NewData:"))
         self.raw["FI"] = f"[{desired_cutoff},{reported_fi[1]}]"

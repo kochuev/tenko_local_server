@@ -4,7 +4,6 @@ from .protocol import SCHEDULES, number, validate_setting
 
 DAY_NAMES = dict(zip(SCHEDULES, ("Whole week", "Monday", "Tuesday", "Wednesday",
                                  "Thursday", "Friday", "Saturday", "Sunday")))
-SCHEDULE_MODES = {"Whole week": "GraphD", "Individual days": "GraphW", "Constant temperature": "Temp"}
 POINT_CONTROLS = {
     f"schedule_{day}_{slot + 1:02d}_{field}": (day, slot, component)
     for day in SCHEDULES for slot in range(10)
