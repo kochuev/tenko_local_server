@@ -74,7 +74,7 @@ is removed. All input commands validate the complete pair before queueing.
 An enable change does not change USE: the separate control-mode selector
 still chooses constant versus scheduled operation.
 
-**Power Modulation Mode**, **Stage 1 (mod only)** and **Stage 2 (mod only)**
+**Power Modulation Mode**, **Stage 1 (mod off only)** and **Stage 2 (mod off only)**
 remain switches. The stage permissions still apply only with automatic modulation off.
 Flow/return cutoff and restart-drop values, **Pump Pre-Circulation Time** and
 **Pump Post-Run Time** remain numbers. These label changes preserve existing
@@ -124,7 +124,7 @@ Main parameter meanings and accepted *new* values:
 | `pNA[0]` | Pump Pre-Circulation Time (pump start to heating) | 1-15 whole minutes |
 | `pNA[1]` | Pump Post-Run Time (heating stop to pump stop) | 1-15 whole minutes |
 | `MOD` | Power Modulation Mode enable, not actual heating | On/Off |
-| `STU[0/1]` | Stage 1 (mod only) / Stage 2 (mod only): manual permissions, not actual heating | On/Off, applicable with modulation off |
+| `STU[0/1]` | Stage 1 (mod off only) / Stage 2 (mod off only): manual permissions, not actual heating | On/Off, applicable with modulation off |
 
 Reported values outside UI limits, such as the captured stored target 6.9 C,
 are retained in raw diagnostics without clamping; the thermostat target is

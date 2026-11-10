@@ -91,8 +91,8 @@ for prefix, field in (("flow", "FI"), ("return", "RE")):
     control(f"{prefix}_cutoff", f"{prefix.title()} cutoff", field, 0, low=10, high=75, unit="°C")
     control(f"{prefix}_hysteresis", f"{prefix.title()} restart drop", field, 1, low=1, high=9, unit="°C")
 control("modulation", "Power Modulation Mode", "MOD", kind="switch")
-control("manual_1", "Stage 1 (mod only)", "STU", 0, "switch")
-control("manual_2", "Stage 2 (mod only)", "STU", 1, "switch")
+control("manual_1", "Stage 1 (mod off only)", "STU", 0, "switch")
+control("manual_2", "Stage 2 (mod off only)", "STU", 1, "switch")
 control("pump_start", "Pump Pre-Circulation Time", "pNA", 0, low=1, high=15, unit="min")
 control("pump_stop", "Pump Post-Run Time", "pNA", 1, low=1, high=15, unit="min")
 for key, (day, slot, component) in POINT_CONTROLS.items():

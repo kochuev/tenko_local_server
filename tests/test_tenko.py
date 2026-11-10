@@ -1166,8 +1166,8 @@ class MQTTTests(unittest.TestCase):
             ("pmt_enabled", "switch", "Maintaining Minimum Temperature (MMT)", "PMT", 0),
             ("pmt_min", "number", "MMT Min Temperature", "PMT", 1),
             ("pmt_max", "number", "MMT Max Temperature", "PMT", 2),
-            ("manual_1", "switch", "Stage 1 (mod only)", "STU", 0),
-            ("manual_2", "switch", "Stage 2 (mod only)", "STU", 1),
+            ("manual_1", "switch", "Stage 1 (mod off only)", "STU", 0),
+            ("manual_2", "switch", "Stage 2 (mod off only)", "STU", 1),
             ("pump_start", "number", "Pump Pre-Circulation Time", "pNA", 0),
             ("pump_stop", "number", "Pump Post-Run Time", "pNA", 1),
         ):

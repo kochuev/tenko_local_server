@@ -36,8 +36,8 @@ views:
           - number.tenko_boiler_return_cutoff
           - number.tenko_boiler_return_restart_drop
           - switch.tenko_boiler_power_modulation_mode
-          - switch.tenko_boiler_stage_1_mod_only
-          - switch.tenko_boiler_stage_2_mod_only
+          - switch.tenko_boiler_stage_1_mod_off_only
+          - switch.tenko_boiler_stage_2_mod_off_only
           - number.tenko_boiler_pump_pre_circulation_time
           - number.tenko_boiler_pump_post_run_time
           - sensor.tenko_boiler_settings_upload_status
