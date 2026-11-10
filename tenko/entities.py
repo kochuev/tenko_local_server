@@ -2,7 +2,7 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 
 from .protocol import SCHEDULES, number
-from .schedule_editor import DAY_NAMES, POINT_CONTROLS, editor_state
+from .schedule_editor import DAY_LABELS, POINT_CONTROLS, editor_state
 
 CONTROL_MODES = {"Whole week": "GraphD", "Individual days": "GraphW", "Constant temperature": "Temp"}
 
@@ -77,9 +77,6 @@ ENTITIES.extend([
 for i in range(12):
     ENTITIES.append(Entity(f"month_{i}", f"Boiler monthly index {i}", unit="kWh",
                            category="diagnostic", debug_only=True, energy_device=True))
-for schedule in SCHEDULES:
-    ENTITIES.append(Entity(f"schedule_{schedule}", f"{schedule} stored schedule",
-                           category="diagnostic", debug_only=True))
 
 
 def control(key, name, setting, index=None, kind="number", low=None, high=None, step=1, unit=None):
@@ -103,16 +100,14 @@ control("pump_stop", "Pump run-on delay", "pNA", 1, low=1, high=15, unit="min")
 for key, (day, slot, component) in POINT_CONTROLS.items():
     field = "hour" if component == 0 else "target (0=OFF)"
     ENTITIES.append(Entity(
-        key, f"{DAY_NAMES[day]} point {slot + 1:02d} {field}",
+        key, f"{DAY_LABELS[day]} slot {slot + 1:02d} {field}",
         kind="select" if component == 0 else "number", category="config",
         action=key, minimum=0, maximum=23 if component == 0 else 40,
         step=1 if component == 0 else .1, unit=None if component == 0 else "°C",
         options=tuple(str(hour) for hour in range(24)) if component == 0 else ()))
 for day in SCHEDULES:
-    ENTITIES.extend([
-        Entity(f"schedule_{day}_layer", f"{DAY_NAMES[day]} schedule layer"),
-        Entity(f"schedule_{day}_validation", f"{DAY_NAMES[day]} schedule validation"),
-    ])
+    ENTITIES.append(Entity(f"schedule_{day}_validation", f"Schedule {DAY_LABELS[day]}",
+                           category="diagnostic"))
 BY_KEY = {entity.key: entity for entity in ENTITIES}
 RECREATE_ENTITIES = (
     "pump", "frost", "error", "clock", "sensor_type",
@@ -120,8 +115,7 @@ RECREATE_ENTITIES = (
 ) + tuple(
     entity.key for entity in ENTITIES
     if entity.energy_device or (entity.setting and entity.key not in POINT_CONTROLS)
-) + tuple(
-    f"schedule_{day}_{field}" for day in SCHEDULES for field in ("layer", "validation"))
+) + tuple(f"schedule_{day}_validation" for day in SCHEDULES)
 REMOVED_ENTITIES = (
     ("select", "schedule_mode"),
     ("select", "editor_day"), ("select", "editor_slot"), ("select", "editor_copy_to"),
@@ -141,7 +135,9 @@ REMOVED_ENTITIES = (
 ) + tuple(
     ("number", key) for key, (_, _, component) in POINT_CONTROLS.items() if component == 0
 ) + tuple(
-    ("button", f"schedule_{day}_{action}") for day in SCHEDULES for action in ("apply", "discard"))
+    ("button", f"schedule_{day}_{action}") for day in SCHEDULES for action in ("apply", "discard")
+) + tuple(
+    ("sensor", key) for day in SCHEDULES for key in (f"schedule_{day}", f"schedule_{day}_layer"))
 
 
 def timestamp(value):
@@ -227,9 +223,6 @@ def state(record, config=None):
     }
     for i in range(12):
         values[f"month_{i}"] = number(at("YSt", i))
-    for schedule in SCHEDULES:
-        points = settings.get(schedule)
-        values[f"schedule_{schedule}"] = f"{len(points)} stored points" if points else None
     for entity in ENTITIES:
         if entity.setting:
             value = record["pending"].get(entity.setting, settings.get(entity.setting))

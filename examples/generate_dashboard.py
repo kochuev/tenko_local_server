@@ -5,7 +5,7 @@ import re
 from pathlib import Path
 
 from tenko.entities import BY_KEY
-from tenko.schedule_editor import DAY_NAMES
+from tenko.schedule_editor import DAY_LABELS
 
 MARKER = "  # Generated Schedule view"
 
@@ -31,19 +31,19 @@ def schedule_view():
     lines.extend([
         "          - type: markdown",
         "            content: >-",
-        "              Each numbered line has Hour (0-23) and Target in C (0 = OFF, otherwise 7-40).",
-        "              Each valid change queues immediately. Whole week repeats ED every day;",
-        "              Individual days uses Monday-Sunday. Editing does not activate a mode.",
-        "              Hours must stay in order without duplicates. Queued uploads continue until confirmed.",
+        "              Each numbered slot has Hour (0-23) and Target in C (0 = OFF, otherwise 7-40).",
+        "              Each valid change queues immediately. Whole week mode repeats WW every day;",
+        "              Individual days uses MO-SU. Editing does not activate a mode.",
+        "              Slots may be in any order; Schedule shows ambiguous when several slots share an hour.",
+        "              Queued uploads continue until confirmed.",
     ])
-    for day, name in DAY_NAMES.items():
+    for day, name in DAY_LABELS.items():
         lines.extend([
             "      - type: grid", "        cards:", "          - type: heading",
             f"            heading: {json.dumps(name)}", "          - type: entities",
             "            show_header_toggle: false", "            entities:",
         ])
-        for key in (f"schedule_{day}_layer", f"schedule_{day}_validation"):
-            lines.append(f"              - {entity_id(key)}")
+        lines.append(f"              - {entity_id(f'schedule_{day}_validation')}")
         lines.extend([
             "          - type: grid", "            columns: 2", "            square: false",
             "            cards:",

@@ -171,8 +171,10 @@ class DockerFlowTests(unittest.TestCase):
         self.assertIn(";MO=01,39.0/", self.poll())
         self.send("schedule_MO_01_target", "22")
         values = self.wait_state(lambda value: value["schedule_MO_01_target"] == 22)
-        self.assertEqual(values["schedule_MO_layer"], "pending")
-        self.assertEqual(self.topic_json("schedules/MO")["points"][0], [2, 39])
+        self.assertEqual(values["command_state"], "pending")
+        self.assertEqual(self.topic_json("schedules/MO")["pending"][0], [1, 22])
+        self.assertEqual(self.topic_json("schedules/MO")["reported"][0], [2, 39])
+        self.assertEqual(values["schedule_MO_validation"], "ok")
         uploaded = self.poll()
         self.assertIn(";MO=01,22.0/", uploaded)
         self.assertEqual(uploaded.count(";"), 16)
@@ -183,7 +185,8 @@ class DockerFlowTests(unittest.TestCase):
         self.wait(lambda: self.topic_json("diagnostics")["status_report"]["raw"]["status"] == "1")
         self.raw["MO"] = self.raw["MO"].replace("[02,39.0]", "[01,22.0]", 1)
         self.assertEqual(self.poll(), "nochange")
-        self.wait_state(lambda value: value["command_state"] == "applied" and value["schedule_MO_layer"] == "reported")
+        self.wait_state(lambda value: value["command_state"] == "applied")
+        self.wait(lambda: self.topic_json("schedules/MO")["pending"] is None)
         self.wait(lambda: self.topic_json("diagnostics")["pending"] == {}
                   and self.topic_json("diagnostics")["draft"] == {})
 
@@ -197,8 +200,9 @@ class DockerFlowTests(unittest.TestCase):
         self.raw["TU"] = self.raw["TU"].replace(",38.0]", ",21.0]", 1)
         self.raw.update(TEN1="On", TEN2="Off", MOD="On,On,1,3")
         self.assertEqual(self.poll(), "nochange")
-        values = self.wait_state(lambda value: value["schedule_TU_layer"] == "reported"
+        values = self.wait_state(lambda value: value["command_state"] == "applied"
                                  and value["schedule_TU_01_target"] == 21 and value["ten_1_on"] == "On")
+        self.wait(lambda: self.topic_json("schedules/TU")["pending"] is None)
         self.assertEqual(values["ten_2_on"], "Off")
         self.assertEqual(values["modulated_power"], 33)
         with self.messages_lock:

@@ -17,7 +17,7 @@ from tenko.entities import BY_KEY, ENTITIES, REMOVED_ENTITIES, discovery, enable
 from tenko.mqtt import Bridge
 from tenko.protocol import ORDER, SCHEDULES, form, parse_report, serialize, validate_setting
 from tenko.server import create_server
-from tenko.schedule_editor import POINT_CONTROLS, details
+from tenko.schedule_editor import DAY_LABELS, POINT_CONTROLS, details
 from tenko.store import Store
 
 
@@ -114,9 +114,12 @@ class ProtocolTests(unittest.TestCase):
     def test_schedule_validation_and_off(self):
         points = [[i * 2, 0 if i % 2 else 20.1] for i in range(10)]
         self.assertEqual(validate_setting("ED", points), points)
-        invalid = [points[:9], points + [[23, 20]], [[0, 20]] * 10,
+        for value in ([[0, 20]] * 10, list(reversed(points))):
+            with self.subTest(value=value):
+                self.assertEqual(validate_setting("ED", value), value)
+        invalid = [points[:9], points + [[23, 20]],
                    [[i + .5, 20] for i in range(10)], [[i, 6] for i in range(10)],
-                   [[i, 41] for i in range(10)], list(reversed(points))]
+                   [[i, 41] for i in range(10)], [[24, 20]] * 10]
         for value in invalid:
             with self.subTest(value=value), self.assertRaises(ValueError):
                 validate_setting("ED", value)
@@ -649,12 +652,11 @@ class MQTTTests(unittest.TestCase):
         record = self.store.get(self.serial)
         self.assertEqual(state(record)["schedule_MO_01_hour"], "1")
         self.assertEqual(record["report"]["settings"]["MO"][0][0], 2)
-        self.assertEqual(state(record)["schedule_MO_layer"], "pending")
         self.assertEqual(record["pending"]["MO"][0][0], 1)
         self.assertIn((f"tenko/{self.serial}/schedules/MO", details(self.store.get(self.serial), "MO")), self.messages)
-        send("schedule_MO_01_hour", "3")
+        send("schedule_MO_01_hour", "24")
         record = self.store.get(self.serial)
-        self.assertIn("neighboring", record["command_error"])
+        self.assertIn("0..23", record["command_error"])
         self.assertEqual(state(record)["schedule_MO_01_hour"], "1")
         send("cancel_pending", "PRESS")
         self.assertIn("MO", self.store.get(self.serial)["pending"])
@@ -931,29 +933,31 @@ class MQTTTests(unittest.TestCase):
         for key in ("statistics_days", "day_amount", "week_amount", "month_0", "month_11"):
             self.assertTrue(BY_KEY[key].debug_only)
 
-    def test_schedule_statuses_are_normal_read_only_sensors(self):
+    def test_schedule_statuses_are_diagnostic_sensors_without_debug(self):
         for level in ("INFO", "DEBUG"):
             config = Config(log_level=level)
             values = state(self.record, config)
             visible = enabled_entities(config)
-            for day in SCHEDULES:
-                for field in ("layer", "validation"):
-                    key = f"schedule_{day}_{field}"
-                    with self.subTest(level=level, key=key):
-                        entity = BY_KEY[key]
-                        self.assertEqual(entity.kind, "sensor")
-                        self.assertIn(entity, visible)
-                        payload = discovery(entity, self.serial, None, config)
-                        self.assertNotIn("entity_category", payload)
-                        self.assertNotIn("command_topic", payload)
-                        self.assertEqual(payload["device"]["identifiers"], [f"tenko_{self.serial}"])
-                        self.assertEqual(payload["json_attributes_topic"], f"tenko/{self.serial}/schedules/{day}")
-                        self.assertEqual(values[key], "reported" if field == "layer" else (
-                            "invalid" if details(self.record, day)["validation_error"] else "valid"))
-                stored = BY_KEY[f"schedule_{day}"]
-                self.assertEqual(stored.category, "diagnostic")
-                self.assertTrue(stored.debug_only)
-                self.assertEqual(stored in visible, level == "DEBUG")
+            for day, label in DAY_LABELS.items():
+                key = f"schedule_{day}_validation"
+                with self.subTest(level=level, key=key):
+                    entity = BY_KEY[key]
+                    self.assertEqual(entity.kind, "sensor")
+                    self.assertEqual(entity.name, f"Schedule {label}")
+                    self.assertIn(entity, visible)
+                    payload = discovery(entity, self.serial, None, config)
+                    self.assertEqual(payload["entity_category"], "diagnostic")
+                    self.assertNotIn("command_topic", payload)
+                    self.assertEqual(payload["device"]["identifiers"], [f"tenko_{self.serial}"])
+                    self.assertEqual(payload["json_attributes_topic"], f"tenko/{self.serial}/schedules/{day}")
+                    self.assertEqual(values[key], "ambiguous" if details(self.record, day)["duplicate_hours"] else "ok")
+                    for removed in (f"schedule_{day}", f"schedule_{day}_layer"):
+                        self.assertNotIn(removed, BY_KEY)
+                        self.assertIn(("sensor", removed), REMOVED_ENTITIES)
+                        self.assertNotIn(removed, values)
+        self.assertEqual(DAY_LABELS["ED"], "WW")
+        self.assertEqual(BY_KEY["schedule_ED_01_hour"].name, "WW slot 01 hour")
+        self.assertEqual(BY_KEY["schedule_MO_10_target"].name, "MO slot 10 target (0=OFF)")
 
     def test_sensor_type_and_nominal_power_are_visible_without_debug(self):
         for level in ("INFO", "DEBUG", "debug"):
@@ -1031,8 +1035,7 @@ class MQTTTests(unittest.TestCase):
         keys = (
             "clock", "frost", "error", "pump", "sensor_type",
             "capacity", "stage_1_capacity", "stage_2_capacity",
-        ) + tuple(
-            f"schedule_{day}_{field}" for day in SCHEDULES for field in ("layer", "validation"))
+        ) + tuple(f"schedule_{day}_validation" for day in SCHEDULES)
         self.bridge.connected = True
         self.bridge.emit(self.serial, discover=True)
         for key in keys:
@@ -1041,7 +1044,8 @@ class MQTTTests(unittest.TestCase):
             self.assertEqual(len(payloads), 2)
             self.assertEqual(payloads[0], "")
             self.assertEqual(payloads[1]["unique_id"], f"tenko_{self.serial}_{key}")
-            self.assertNotIn("entity_category", payloads[1])
+            self.assertEqual(payloads[1].get("entity_category"),
+                             "diagnostic" if key.startswith("schedule_") else None)
             self.assertEqual(payloads[1]["device"]["identifiers"], [f"tenko_{self.serial}"])
         self.messages.clear()
         self.bridge.emit(self.serial, discover=True)
@@ -1086,7 +1090,9 @@ class MQTTTests(unittest.TestCase):
             self.assertIn("constant_thermostat", values)
             diagnostics = next(payload for name, payload in self.messages if name == f"tenko/{self.serial}/diagnostics")
             self.assertEqual(bool(diagnostics), level == "DEBUG")
-        self.assertFalse(any(entity.category == "diagnostic" for entity in enabled_entities(Config())))
+        self.assertEqual(
+            {entity.key for entity in enabled_entities(Config()) if entity.category == "diagnostic"},
+            {f"schedule_{day}_validation" for day in SCHEDULES})
 
 
 class ConfigTests(unittest.TestCase):
@@ -1209,23 +1215,27 @@ class NativeEditorTests(unittest.TestCase):
         self.assertIn(";MO=01,00.0/03,20.1/", response)
 
     def test_received_duplicates_are_not_silently_fixed(self):
-        self.assertEqual(state(self.store.get(self.serial))["schedule_ED_validation"], "invalid")
+        self.assertEqual(state(self.store.get(self.serial))["schedule_ED_validation"], "ambiguous")
+        self.assertEqual(details(self.store.get(self.serial), "ED")["duplicate_hours"], [0])
         record = self.edit("schedule_ED_01_target", "20")
         self.assertEqual([p[0] for p in record["pending"]["ED"][:3]], [0, 0, 0])
         _, response = self.store.report(self.raw)
         self.assertIn(";ED=00,20.0/00,40.0/00,40.0/", response)
 
-    def test_out_of_order_reported_hours_can_be_repaired_point_by_point(self):
+    def test_any_hour_combination_is_accepted_and_duplicates_are_ambiguous(self):
         hours = [21, 0, 0, 0, 0, 20, 7, 0, 0, 11]
         self.raw["SU"] = "[" + ",".join(f"[{hour:02d},20.0]" for hour in hours) + "];"
         self.store.report(self.raw)
-        self.assertEqual(state(self.store.get(self.serial))["schedule_SU_validation"], "invalid")
-        for slot in range(1, 11):
-            record = self.edit(f"schedule_SU_{slot:02d}_hour", str(slot - 1))
-        self.assertEqual([point[0] for point in record["pending"]["SU"]], list(range(10)))
-        self.assertEqual(state(record)["schedule_SU_validation"], "valid")
-        with self.assertRaisesRegex(ValueError, "neighboring"):
-            self.edit("schedule_SU_02_hour", "5")
+        self.assertEqual(state(self.store.get(self.serial))["schedule_SU_validation"], "ambiguous")
+        for slot, hour in enumerate((23, 1, 5, 2, 9, 4, 3, 8, 6, 7), 1):
+            record = self.edit(f"schedule_SU_{slot:02d}_hour", str(hour))
+        self.assertEqual([point[0] for point in record["pending"]["SU"]], [23, 1, 5, 2, 9, 4, 3, 8, 6, 7])
+        self.assertEqual(state(record)["schedule_SU_validation"], "ok")
+        record = self.edit("schedule_SU_02_hour", "23")
+        self.assertEqual(state(record)["schedule_SU_validation"], "ambiguous")
+        self.assertEqual(details(record, "SU")["duplicate_hours"], [23])
+        _, response = self.store.report(self.raw)
+        self.assertIn(";SU=23,20.0/23,20.0/05,20.0/", response)
 
     def test_confirmation_clears_pending_without_an_apply_button(self):
         self.edit("schedule_MO_01_hour", "1")
@@ -1234,7 +1244,7 @@ class NativeEditorTests(unittest.TestCase):
         record, response = self.store.report(self.raw)
         self.assertEqual(response, "nochange")
         self.assertNotIn("MO", record["pending"])
-        self.assertEqual(state(record)["schedule_MO_layer"], "reported")
+        self.assertIsNone(details(record, "MO")["pending"])
         self.assertEqual(state(record)["schedule_MO_01_hour"], "1")
 
     def test_existing_duplicate_hours_can_be_corrected_without_a_draft(self):
@@ -1243,7 +1253,7 @@ class NativeEditorTests(unittest.TestCase):
         self.store.report(self.raw)
         record = self.edit("schedule_ED_02_hour", "2")
         self.assertEqual([point[0] for point in record["pending"]["ED"]], list(range(0, 20, 2)))
-        self.assertEqual(state(record)["schedule_ED_validation"], "valid")
+        self.assertEqual(state(record)["schedule_ED_validation"], "ok")
         self.assertEqual(record["draft"], {})
 
     def test_hour_dropdown_boundaries_zero_and_23_are_accepted(self):
@@ -1264,7 +1274,7 @@ class NativeEditorTests(unittest.TestCase):
         record, response = self.store.report(self.raw)
         self.assertEqual(record["pending"]["MO"][0], [1, 22])
         self.assertIn(";MO=01,22.0/", response)
-        self.assertEqual(state(record)["schedule_MO_layer"], "pending")
+        self.assertEqual(details(record, "MO")["pending"][0], [1, 22])
         self.raw["MO"] = self.raw["MO"].replace("[01,39.0]", "[01,22.0]", 1)
         record, response = self.store.report(self.raw)
         self.assertEqual(record["pending"], {})
@@ -1281,14 +1291,14 @@ class NativeEditorTests(unittest.TestCase):
         self.assertEqual(set(record["pending"]), {"MO", "TU"})
         self.assertEqual(record["report"]["settings"]["USE"], "GraphD")
 
-    def test_conflicting_hour_is_rejected_without_changing_pending(self):
+    def test_out_of_order_and_duplicate_hours_are_accepted_without_changing_other_slots(self):
         self.edit("schedule_MO_01_hour", "1")
-        before = self.store.get(self.serial)
         for key, hour in (("schedule_MO_01_hour", "3"), ("schedule_MO_02_hour", "0"),
                           ("schedule_MO_03_hour", "3")):
-            with self.subTest(key=key), self.assertRaisesRegex(ValueError, "neighboring"):
-                self.edit(key, hour)
-            self.assertEqual(self.store.get(self.serial), before)
+            with self.subTest(key=key):
+                record = self.edit(key, hour)
+        self.assertEqual([point[0] for point in record["pending"]["MO"][:4]], [3, 0, 3, 5])
+        self.assertEqual(details(record, "MO")["duplicate_hours"], [3])
 
     def test_removed_apply_discard_and_cancel_commands_do_not_change_pending(self):
         self.edit("schedule_MO_01_hour", "1")
@@ -1324,7 +1334,7 @@ class NativeEditorTests(unittest.TestCase):
         self.assertEqual(migrated["pending"], record["pending"])
         self.assertEqual(migrated["draft"]["MO"], legacy_draft)
         self.assertEqual(state(migrated)["schedule_MO_01_target"], 39)
-        self.assertEqual(state(migrated)["schedule_MO_layer"], "pending")
+        self.assertEqual(details(migrated, "MO")["pending"], record["pending"]["MO"])
         self.assertEqual(migrated["schedule_editor"]["stage_source"], "ST1/ST2")
         self.assertEqual(migrated["status_report"], {})
 

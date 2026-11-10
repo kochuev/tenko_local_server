@@ -118,11 +118,9 @@ def validate_setting(key, value):
         result = []
         for point in value:
             if not isinstance(point, list) or len(point) != 2:
-                raise ValueError(f"{key}: each point must be [hour, target]")
+                raise ValueError(f"{key}: each slot must be [hour, target]")
             hour = int(numeric(point[0], 0, 23))
             target = 0.0 if number(point[1]) == 0 else numeric(point[1], 7, 40, .1)
-            if result and hour <= result[-1][0]:
-                raise ValueError(f"{key}: new schedules require strictly increasing hours")
             result.append([hour, target])
         return result
     if key == "TMP":
@@ -186,6 +184,6 @@ def serialize(settings):
             values[key] = value
         if any(c in values[key] for c in ";:=\r\n"):
             raise ValueError(f"Unsafe response value for {key}")
-    # Unchanged captured schedules may contain duplicates and TMP may be 6.9.
-    # They are preserved, not revalidated against stricter new-user-input rules.
+    # Captured TMP may be 6.9; it is preserved, not revalidated against
+    # stricter new-user-input rules.
     return "NewData:" + ";".join(f"{k}={values[k]}" for k in ORDER) + ";EndData"

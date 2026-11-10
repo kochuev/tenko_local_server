@@ -1,9 +1,9 @@
 import copy
+from collections import Counter
 
-from .protocol import SCHEDULES, number, validate_setting
+from .protocol import SCHEDULES, number
 
-DAY_NAMES = dict(zip(SCHEDULES, ("Whole week", "Monday", "Tuesday", "Wednesday",
-                                 "Thursday", "Friday", "Saturday", "Sunday")))
+DAY_LABELS = dict(zip(SCHEDULES, ("WW", "MO", "TU", "WE", "TH", "FR", "SA", "SU")))
 POINT_CONTROLS = {
     f"schedule_{day}_{slot + 1:02d}_{field}": (day, slot, component)
     for day in SCHEDULES for slot in range(10)
@@ -20,30 +20,20 @@ def points(record, day):
             or record.get("report", {}).get("settings", {}).get(day))
 
 
-def hours_increasing(selected):
-    return all(a[0] < b[0] for a, b in zip(selected, selected[1:]))
-
-
-def layer(record, day):
-    if day in record["pending"]:
-        return "pending"
-    return "reported" if points(record, day) else "no data"
+def duplicate_hours(selected):
+    counts = Counter(int(hour) for hour, _ in selected or ())
+    return sorted(hour for hour, count in counts.items() if count > 1)
 
 
 def details(record, day):
     selected = points(record, day)
-    error = None
-    if selected:
-        try:
-            validate_setting(day, selected)
-        except ValueError as exc:
-            error = str(exc)
     return {
-        "day": day, "day_name": DAY_NAMES[day], "layer": layer(record, day),
-        "points": record.get("report", {}).get("settings", {}).get(day),
-        "displayed_points": selected, "pending": record["pending"].get(day),
-        "validation_error": error,
-        "note": "Changes queue immediately. Pending values are NOT confirmation. Zero target means OFF.",
+        "day": day, "day_name": DAY_LABELS[day],
+        "reported": record.get("report", {}).get("settings", {}).get(day),
+        "displayed": selected, "pending": record["pending"].get(day),
+        "duplicate_hours": duplicate_hours(selected),
+        "note": ("Changes queue immediately. Pending values are NOT confirmation. Zero target means OFF. "
+                 "Slots may be in any order; several slots at one hour are ambiguous and resolved by the boiler."),
     }
 
 
@@ -56,32 +46,24 @@ def editor_state(record):
             value = str(int(value)) if value is not None and value.is_integer() and 0 <= value <= 23 else None
         values[key] = value
     for day in SCHEDULES:
-        info = details(record, day)
-        values[f"schedule_{day}_layer"] = info["layer"]
+        selected = points(record, day)
         values[f"schedule_{day}_validation"] = (
-            "invalid" if info["validation_error"] else "valid") if info["displayed_points"] else "no data"
+            ("ambiguous" if duplicate_hours(selected) else "ok") if selected else None)
     return values
 
 
 def edit(record, action, payload):
-    """Validate a point change and return a patch without modifying other points."""
+    """Validate a slot change and return a patch without modifying other slots."""
     if action in POINT_CONTROLS:
         day, slot, component = POINT_CONTROLS[action]
         selected = copy.deepcopy(points(record, day))
         if not selected or len(selected) != 10:
-            raise ValueError("A reported ten-point schedule is required before editing")
+            raise ValueError("A reported ten-slot schedule is required before editing")
         value = number(payload)
         if component == 0:
             if value is None or value != int(value) or not 0 <= value <= 23:
                 raise ValueError("Hour must be a whole number 0..23")
             value = int(value)
-            # Out-of-order days are edited freely so they can be repaired; once
-            # hours are strictly increasing, edits must keep them that way.
-            if value != selected[slot][0] and hours_increasing(selected) and (
-                (slot > 0 and value <= selected[slot - 1][0])
-                or (slot < 9 and value >= selected[slot + 1][0])
-            ):
-                raise ValueError(f"{day}: hour must be strictly between neighboring points; duplicates are not allowed")
         elif (value is None or (value != 0 and not 7 <= value <= 40)
               or abs(value * 10 - round(value * 10)) > 1e-7):
             raise ValueError("Target must be 0=OFF or 7..40 C in 0.1 C steps")

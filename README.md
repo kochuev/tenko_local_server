@@ -46,9 +46,10 @@ It includes separate **Boiler** and **Schedule** views, with no custom cards.
 The built-in device page has fixed HA sections: MQTT discovery cannot add
 custom schedule sections or control their sorting. All editable settings,
 including Control mode, belong to Controls except schedule
-point hours/targets, which remain in Configuration. Schedule layer and validation
-are read-only Sensors on **Tenko Boiler**, not Configuration entities or a
-separate schedule device. Operational readings are Sensors. Diagnostic entities
+slot hours/targets, which remain in Configuration. **Schedule WW** and
+**Schedule MO-SU** are read-only Diagnostic sensors on **Tenko Boiler**, always
+available, not Configuration entities or a separate schedule device.
+Operational readings are Sensors. Other diagnostic entities
 exist only with `LOG_LEVEL=DEBUG`. Startup migration clears retained Configuration
 categories from ordinary settings while preserving their entity identities.
 
@@ -78,8 +79,8 @@ Flow/return cutoff and restart-drop values and pump delays remain numbers.
 
 | Control mode | Wire value | Meaning |
 |---|---|---|
-| Whole week | `GraphD` | Repeating daily timetable, ED |
-| Individual days | `GraphW` | Weekly Monday-Sunday timetables, MO-SU |
+| Whole week | `GraphD` | Repeating daily timetable, WW (protocol `ED`) |
+| Individual days | `GraphW` | Weekly per-day timetables, MO-SU |
 | Constant temperature | `Temp` | Constant air-temperature target |
 
 The former **Schedule mode** entity is removed automatically through MQTT
@@ -144,13 +145,14 @@ lower < upper, or send an atomic tuple through MQTT.
 are logged as warnings; they do not block controls or unrelated uploads.
 The conflict-source selector and resolve button have been removed.
 
-### Schedule: individual point rows
+### Schedule: individual slot rows
 
-The **Schedule** dashboard view has eight sections: **Whole week** (ED) and
-**Monday-Sunday** (MO-SU). Every section shows all **ten numbered rows**, with
-independently editable **Hour** and **Target** fields side by side: 80 points,
-80 native **hour dropdowns (0-23)** and 80 **temperature inputs**.
-There is no shared day/slot cursor.
+The **Schedule** dashboard view has eight sections: **WW** (whole week,
+protocol `ED`) and **MO-SU**. Every section shows all **ten numbered slots**,
+with independently editable **Hour** and **Target** fields side by side:
+80 slots, 80 native **hour dropdowns (0-23)** and 80 **temperature inputs**.
+Entity names use the same two-letter labels, e.g. **MO slot 01 hour** and
+**WW slot 10 target (0=OFF)**. There is no shared day/slot cursor.
 You can edit inactive schedules without activating them.
 
 **Each valid value change queues immediately**, just like ordinary settings.
@@ -160,36 +162,27 @@ a subsequent report confirms the values, then becomes `applied`.
 The **Schedule** dashboard view focuses on timetable editing and upload status;
 the single **Control mode** selector is in the Boiler view's Settings card.
 
-Point fields show **pending values** while an accepted change is waiting for
-confirmation, otherwise boiler-reported values. Each day's **schedule layer**
-distinguishes `reported`, `pending`, and `no data`. Schedule sensor attributes
-expose all ten displayed points and the separate reported and pending arrays.
+Slot fields show **pending values** while an accepted change is waiting for
+confirmation, otherwise boiler-reported values. Exactly ten slots are always
+sent; a target is **0 = OFF**, or **7-40 C** in steps of 0.1. Values between
+0 and 7 other than zero are rejected, even though a native number's min/max UI
+cannot represent that gap. Hours are whole numbers 0-23.
 
-Exactly ten slots must be supplied, with strictly increasing whole-hour times.
-A target is **0 = OFF**, or **7-40 C** in steps of 0.1. Values between 0 and 7
-other than zero are rejected, even though a native number's min/max UI cannot
-represent that gap. **When a day's hours are strictly increasing, an hour
-change must remain strictly between its neighbors**; duplicate or out-of-order
-choices are rejected, the field returns to its accepted value, and Settings
-command error explains why. When shifting several points, move them in an
-order that avoids conflicts, or submit a complete valid day atomically through MQTT.
-
-Existing duplicate or out-of-order hours from boiler reports are preserved and
-flagged by schedule validation, not silently sorted or deduplicated. Editing a
-target does not rewrite unrelated hours. While a day is invalid, any hour 0-23
-is accepted so it can be repaired point by point (for example, setting slots
-1-10 in order); once its hours are strictly increasing again, the neighbor rule
-applies. Full schedule patches through MQTT require all ten hours to be strictly
-increasing.
+**Slots may use hours in any order**, like on the boiler's own screen; no
+combination of hours is blocked, sorted or deduplicated, whether edited per
+slot or submitted as a complete day through MQTT. Each **Schedule XX**
+diagnostic sensor is `ok`, or `ambiguous` when more than one slot uses the same
+hour (the boiler decides which applies). Its attributes list the `reported`,
+`displayed` and `pending` slots and the `duplicate_hours`.
 
 Pending uploads survive bridge restarts and keep retrying until confirmed.
 A report of an older uploaded value never clears a newer pending edit.
-Commands for different fixed points cannot be redirected by another client's
+Commands for different fixed slots cannot be redirected by another client's
 day/slot selection.
 
 The dashboard uses standard HA sections, grids and Entities cards with native
 select dropdowns and number inputs, not an iframe or the HA Schedule helper.
-Schedule points are step changes, not interpolated curves; duplicate-hour resolution and midnight
+Schedule slots are step changes, not interpolated curves; duplicate-hour resolution and midnight
 wraparound remain unverified. HA's Schedule helper is not another active
 schedule authority and is not synchronized implicitly.
 
@@ -262,7 +255,7 @@ For default prefixes and serial `211229_005`:
 | `tenko/211229_005/status_availability` | Independent separate-status freshness |
 | `tenko/211229_005/state` | Actual telemetry, accepted pending control values and upload status |
 | `tenko/211229_005/diagnostics` | DEBUG only: raw/decoded parameters, last status request, reported settings, pending commands and legacy drafts |
-| `tenko/211229_005/schedules/ED` | `{points, displayed_points, pending, layer, validation_error, ...}`; equivalent topics for MO-SU |
+| `tenko/211229_005/schedules/ED` | `{reported, displayed, pending, duplicate_hours, ...}` slot arrays; equivalent topics for MO-SU |
 | `tenko/211229_005/command/<entity-key>` | Native control command, never retained |
 | `tenko/211229_005/command/settings` | Atomic JSON patch of demonstrated response keys |
 | `homeassistant/<component>/tenko_211229_005/<entity-key>/config` | Retained HA discovery configuration |
@@ -289,12 +282,12 @@ The former thermostat command keys `minimum_mode` (`off` / `heat_cool`),
 `minimum_low` and `minimum_high` remain accepted as compatibility aliases,
 but no range thermostat is discovered.
 
-Schedule point commands use `schedule_<DAY>_<POINT>_hour` and
-`schedule_<DAY>_<POINT>_target`, e.g. `schedule_MO_01_hour` with `6` and
-`schedule_MO_01_target` with `21.5`. DAY is ED/MO/TU/WE/TH/FR/SA/SU;
-POINT is 01-10.
+Schedule slot commands use `schedule_<DAY>_<SLOT>_hour` and
+`schedule_<DAY>_<SLOT>_target`, e.g. `schedule_MO_01_hour` with `6` and
+`schedule_MO_01_target` with `21.5`. DAY is ED/MO/TU/WE/TH/FR/SA/SU
+(ED is shown as WW); SLOT is 01-10.
 
-Schedule point commands queue immediately; no apply/discard commands exist.
+Schedule slot commands queue immediately; no apply/discard commands exist.
 There are no apply, discard, conflict-resolution or cancel buttons.
 All entities and their
 full discovery payloads are defined centrally in `tenko/entities.py`.
@@ -361,7 +354,7 @@ unique IDs are preserved, so an existing registry may retain old entity IDs.
 **Nominal power**, **Stage 1 nominal power** and **Stage 2 nominal power** are
 normal Sensors, available without DEBUG. The power names replace Nominal capacity
 and Stage 1/2 rated capacity; their values remain **rated kW**, not current consumption.
-Their discovery entries, along with all schedule layer/validation sensors,
+Their discovery entries, along with the **Schedule WW/MO-SU** sensors,
 are recreated once at bridge startup to clear old registry categories while
 keeping their unique IDs. Existing entity IDs may retain the old names.
 The clock is formatted as `HH:MM`, without inventing a timezone.
