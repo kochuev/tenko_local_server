@@ -39,16 +39,19 @@ ENTITIES = [
 for key, name in (
     ("pump", "Pump"), ("frost", "AF-5"), ("error", "Error Code"),
     ("clock", "Boiler clock"), ("command_state", "Settings upload status"),
-    ("command_error", "Settings command error"),
+    ("command_error", "Settings command error"), ("sensor_type", "Air sensor type"),
 ):
     ENTITIES.append(Entity(key, name))
 for key, name, unit in (
-    ("capacity", "Nominal capacity (not current draw)", "kW"),
-    ("stage_1_capacity", "Stage 1 rated capacity", "kW"),
-    ("stage_2_capacity", "Stage 2 rated capacity", "kW"),
+    ("capacity", "Nominal power", "kW"),
+    ("stage_1_capacity", "Stage 1 nominal power", "kW"),
+    ("stage_2_capacity", "Stage 2 nominal power", "kW"),
+):
+    ENTITIES.append(Entity(key, name, unit=unit))
+for key, name, unit in (
     ("active_elements", "Reported modulation element count", None),
     ("total_elements", "Reported total element count", None),
-    ("sensor_type", "Air sensor type", None), ("weekday", "Raw weekday code", None),
+    ("weekday", "Raw weekday code", None),
     ("raw_status", "Separate raw status", None),
     ("stage_conflict", "Manual-stage duplicate consistency", None),
     ("raw_fields", "Raw protocol diagnostics", None), ("parse_errors", "Report parsing", None),
@@ -107,13 +110,18 @@ for key, (day, slot, component) in POINT_CONTROLS.items():
         options=tuple(str(hour) for hour in range(24)) if component == 0 else ()))
 for day in SCHEDULES:
     ENTITIES.extend([
-        Entity(f"schedule_{day}_layer", f"{DAY_NAMES[day]} schedule layer", category="config"),
-        Entity(f"schedule_{day}_validation", f"{DAY_NAMES[day]} schedule validation", category="config"),
+        Entity(f"schedule_{day}_layer", f"{DAY_NAMES[day]} schedule layer"),
+        Entity(f"schedule_{day}_validation", f"{DAY_NAMES[day]} schedule validation"),
     ])
 BY_KEY = {entity.key: entity for entity in ENTITIES}
-RECREATE_ENTITIES = ("pump", "frost", "error", "clock") + tuple(
+RECREATE_ENTITIES = (
+    "pump", "frost", "error", "clock", "sensor_type",
+    "capacity", "stage_1_capacity", "stage_2_capacity",
+) + tuple(
     entity.key for entity in ENTITIES
-    if entity.energy_device or (entity.setting and entity.key not in POINT_CONTROLS))
+    if entity.energy_device or (entity.setting and entity.key not in POINT_CONTROLS)
+) + tuple(
+    f"schedule_{day}_{field}" for day in SCHEDULES for field in ("layer", "validation"))
 REMOVED_ENTITIES = (
     ("select", "schedule_mode"),
     ("select", "editor_day"), ("select", "editor_slot"), ("select", "editor_copy_to"),

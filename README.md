@@ -46,10 +46,11 @@ It includes separate **Boiler** and **Schedule** views, with no custom cards.
 The built-in device page has fixed HA sections: MQTT discovery cannot add
 custom schedule sections or control their sorting. All editable settings,
 including Control mode, belong to Controls except schedule
-point hours/targets, which remain in Configuration with their schedule status.
-Operational readings are Sensors. Diagnostic entities exist only with
-`LOG_LEVEL=DEBUG`. Startup migration clears retained Configuration categories
-from ordinary settings while preserving their entity identities.
+point hours/targets, which remain in Configuration. Schedule layer and validation
+are read-only Sensors on **Tenko Boiler**, not Configuration entities or a
+separate schedule device. Operational readings are Sensors. Diagnostic entities
+exist only with `LOG_LEVEL=DEBUG`. Startup migration clears retained Configuration
+categories from ordinary settings while preserving their entity identities.
 
 ## Native Home Assistant configuration
 
@@ -355,9 +356,13 @@ TEN1 and TEN2 are labeled **Heating element 1** and **Heating element 2**.
 These use plain On/Off binary sensors, not the
 heat device class that Home Assistant renders as Hot/Normal. Their existing
 unique IDs are preserved, so an existing registry may retain old entity IDs.
-**AF-5**, **Pump**, **Error Code** and **Boiler clock** are normal Sensors,
-not Diagnostics. Their discovery entries are recreated once at bridge startup
-to clear old registry categories, keeping their unique IDs and history.
+**AF-5**, **Pump**, **Error Code**, **Boiler clock**, **Air sensor type**,
+**Nominal power**, **Stage 1 nominal power** and **Stage 2 nominal power** are
+normal Sensors, available without DEBUG. The power names replace Nominal capacity
+and Stage 1/2 rated capacity; their values remain **rated kW**, not current consumption.
+Their discovery entries, along with all schedule layer/validation sensors,
+are recreated once at bridge startup to clear old registry categories while
+keeping their unique IDs. Existing entity IDs may retain the old names.
 The clock is formatted as `HH:MM`, without inventing a timezone.
 AF Off means standby; On means checking, not enabled. Err is shown as its
 reported Error Code without inventing a numbered fault description. Raw weekday, sensor

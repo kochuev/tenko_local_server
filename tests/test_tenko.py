@@ -578,6 +578,8 @@ class MQTTTests(unittest.TestCase):
                 self.assertNotIn("device_class", payload)
             if "capacity" in entity.key:
                 self.assertNotIn("device_class", payload)
+            if entity.kind in ("sensor", "binary_sensor"):
+                self.assertNotEqual(payload.get("entity_category"), "config")
         self.assertEqual(len(identifiers), len(set(identifiers)))
         self.assertEqual(sum(e.setting == "STU" for e in ENTITIES), 2)
 
@@ -929,6 +931,56 @@ class MQTTTests(unittest.TestCase):
         for key in ("statistics_days", "day_amount", "week_amount", "month_0", "month_11"):
             self.assertTrue(BY_KEY[key].debug_only)
 
+    def test_schedule_statuses_are_normal_read_only_sensors(self):
+        for level in ("INFO", "DEBUG"):
+            config = Config(log_level=level)
+            values = state(self.record, config)
+            visible = enabled_entities(config)
+            for day in SCHEDULES:
+                for field in ("layer", "validation"):
+                    key = f"schedule_{day}_{field}"
+                    with self.subTest(level=level, key=key):
+                        entity = BY_KEY[key]
+                        self.assertEqual(entity.kind, "sensor")
+                        self.assertIn(entity, visible)
+                        payload = discovery(entity, self.serial, None, config)
+                        self.assertNotIn("entity_category", payload)
+                        self.assertNotIn("command_topic", payload)
+                        self.assertEqual(payload["device"]["identifiers"], [f"tenko_{self.serial}"])
+                        self.assertEqual(payload["json_attributes_topic"], f"tenko/{self.serial}/schedules/{day}")
+                        self.assertEqual(values[key], "reported" if field == "layer" else (
+                            "invalid" if details(self.record, day)["validation_error"] else "valid"))
+                stored = BY_KEY[f"schedule_{day}"]
+                self.assertEqual(stored.category, "diagnostic")
+                self.assertTrue(stored.debug_only)
+                self.assertEqual(stored in visible, level == "DEBUG")
+
+    def test_sensor_type_and_nominal_power_are_visible_without_debug(self):
+        for level in ("INFO", "DEBUG", "debug"):
+            config = Config(log_level=level)
+            values = state(self.record, config)
+            for key, name, value in (
+                ("sensor_type", "Air sensor type", "wire"),
+                ("capacity", "Nominal power", 15),
+                ("stage_1_capacity", "Stage 1 nominal power", 5),
+                ("stage_2_capacity", "Stage 2 nominal power", 10),
+            ):
+                with self.subTest(level=level, key=key):
+                    entity = BY_KEY[key]
+                    self.assertEqual(entity.kind, "sensor")
+                    self.assertFalse(entity.debug_only)
+                    self.assertIn(entity, enabled_entities(config))
+                    payload = discovery(entity, self.serial, None, config)
+                    self.assertEqual(payload["name"], name)
+                    self.assertNotIn("entity_category", payload)
+                    self.assertNotIn("command_topic", payload)
+                    self.assertNotIn("state_class", payload)
+                    self.assertEqual(payload["device"]["identifiers"], [f"tenko_{self.serial}"])
+                    self.assertEqual(values[key], value)
+                    if key != "sensor_type":
+                        self.assertEqual(payload["unit_of_measurement"], "kW")
+                        self.assertNotIn("device_class", payload)
+
     def test_all_statistical_diagnostics_move_to_energy_meter_with_stable_ids(self):
         keys = ("statistics_days", "day_amount", "week_amount") + tuple(f"month_{i}" for i in range(12))
         self.bridge.config = Config(log_level="DEBUG")
@@ -976,9 +1028,14 @@ class MQTTTests(unittest.TestCase):
         self.assertEqual(payloads[1]["name"], "Energy")
 
     def test_operational_sensor_categories_are_migrated_once_without_changing_ids(self):
+        keys = (
+            "clock", "frost", "error", "pump", "sensor_type",
+            "capacity", "stage_1_capacity", "stage_2_capacity",
+        ) + tuple(
+            f"schedule_{day}_{field}" for day in SCHEDULES for field in ("layer", "validation"))
         self.bridge.connected = True
         self.bridge.emit(self.serial, discover=True)
-        for key in ("clock", "frost", "error", "pump"):
+        for key in keys:
             topic = f"homeassistant/sensor/tenko_{self.serial}/{key}/config"
             payloads = [payload for name, payload in self.messages if name == topic]
             self.assertEqual(len(payloads), 2)
@@ -988,7 +1045,7 @@ class MQTTTests(unittest.TestCase):
             self.assertEqual(payloads[1]["device"]["identifiers"], [f"tenko_{self.serial}"])
         self.messages.clear()
         self.bridge.emit(self.serial, discover=True)
-        for key in ("clock", "frost", "error", "pump"):
+        for key in keys:
             topic = f"homeassistant/sensor/tenko_{self.serial}/{key}/config"
             payloads = [payload for name, payload in self.messages if name == topic]
             self.assertEqual(len(payloads), 1)
