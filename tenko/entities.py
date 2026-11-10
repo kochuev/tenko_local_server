@@ -1,5 +1,5 @@
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 
 from .protocol import SCHEDULES, number
 from .schedule_editor import DAY_LABELS, POINT_CONTROLS, editor_state
@@ -32,13 +32,15 @@ ENTITIES = [
     Entity("flow", "Flow temperature", unit="°C", device_class="temperature", measurement=True, category=None),
     Entity("return", "Return temperature", unit="°C", device_class="temperature", measurement=True, category=None),
     Entity("pressure", "Pressure", unit="bar", device_class="pressure", measurement=True, category=None),
+    Entity("boiler_date", "Boiler Date", device_class="date"),
     Entity("modulated_power", "Modulated Power", unit="%", measurement=True),
     Entity("period_amount", "Energy", unit="kWh", device_class="energy", energy_device=True),
     Entity("constant_thermostat", "Constant temperature", kind="climate"),
 ]
 for key, name in (
     ("pump", "Pump"), ("frost", "AF-5"), ("error", "Error Code"),
-    ("clock", "Boiler clock"), ("command_state", "Settings upload status"),
+    ("clock", "Boiler clock"), ("boiler_weekday", "Boiler Weekday"),
+    ("command_state", "Settings upload status"),
     ("command_error", "Settings command error"), ("sensor_type", "Air sensor type"),
 ):
     ENTITIES.append(Entity(key, name))
@@ -49,11 +51,7 @@ for key, name, unit in (
 ):
     ENTITIES.append(Entity(key, name, unit=unit))
 for key, name, unit in (
-    ("active_elements", "Reported modulation element count", None),
-    ("total_elements", "Reported total element count", None),
-    ("weekday", "Raw weekday code", None),
     ("raw_status", "Separate raw status", None),
-    ("stage_conflict", "Manual-stage duplicate consistency", None),
     ("raw_fields", "Raw protocol diagnostics", None), ("parse_errors", "Report parsing", None),
 ):
     ENTITIES.append(Entity(key, name, unit=unit, category="diagnostic", debug_only=True))
@@ -86,17 +84,17 @@ def control(key, name, setting, index=None, kind="number", low=None, high=None, 
 
 ENTITIES.append(Entity("mode", "Control mode", kind="select",
                        setting="USE", options=tuple(CONTROL_MODES)))
-control("pmt_enabled", "Maintaining Minimum Temperature enabled", "PMT", 0, "switch")
-control("pmt_min", "Maintaining Minimum Temperature min", "PMT", 1, low=6, high=15, unit="°C")
-control("pmt_max", "Maintaining Minimum Temperature max", "PMT", 2, low=7, high=17, unit="°C")
+control("pmt_enabled", "Maintaining Minimum Temperature (MMT)", "PMT", 0, "switch")
+control("pmt_min", "MMT Min Temperature", "PMT", 1, low=6, high=15, unit="°C")
+control("pmt_max", "MMT Max Temperature", "PMT", 2, low=7, high=17, unit="°C")
 for prefix, field in (("flow", "FI"), ("return", "RE")):
     control(f"{prefix}_cutoff", f"{prefix.title()} cutoff", field, 0, low=10, high=75, unit="°C")
     control(f"{prefix}_hysteresis", f"{prefix.title()} restart drop", field, 1, low=1, high=9, unit="°C")
 control("modulation", "Power Modulation Mode", "MOD", kind="switch")
-control("manual_1", "Manual stage 1 enable (modulation off only)", "STU", 0, "switch")
-control("manual_2", "Manual stage 2 enable (modulation off only)", "STU", 1, "switch")
-control("pump_start", "Pump lead-in delay", "pNA", 0, low=1, high=15, unit="min")
-control("pump_stop", "Pump run-on delay", "pNA", 1, low=1, high=15, unit="min")
+control("manual_1", "Stage 1 (mod only)", "STU", 0, "switch")
+control("manual_2", "Stage 2 (mod only)", "STU", 1, "switch")
+control("pump_start", "Pump Pre-Circulation Time", "pNA", 0, low=1, high=15, unit="min")
+control("pump_stop", "Pump Post-Run Time", "pNA", 1, low=1, high=15, unit="min")
 for key, (day, slot, component) in POINT_CONTROLS.items():
     field = "hour" if component == 0 else "target (0=OFF)"
     ENTITIES.append(Entity(
@@ -132,6 +130,8 @@ REMOVED_ENTITIES = (
     ("switch", "constant_enabled"), ("number", "constant_target"),
     ("climate", "minimum_thermostat"),
     ("select", "stage_resolution_source"), ("button", "resolve_stages"),
+    ("sensor", "stage_conflict"), ("sensor", "weekday"),
+    ("sensor", "active_elements"), ("sensor", "total_elements"),
 ) + tuple(
     ("number", key) for key, (_, _, component) in POINT_CONTROLS.items() if component == 0
 ) + tuple(
@@ -189,6 +189,17 @@ def state(record, config=None):
     clock = (f"{int(hour):02d}:{int(minute):02d}"
              if hour is not None and minute is not None and hour.is_integer()
              and minute.is_integer() and 0 <= hour <= 23 and 0 <= minute <= 59 else None)
+    day, month, year = (number(at("TIM", i)) for i in (3, 4, 5))
+    boiler_date = None
+    if (all(value is not None and value.is_integer() for value in (day, month, year))
+            and 1 <= day <= 31 and 1 <= month <= 12 and 0 <= year <= 99):
+        try:
+            boiler_date = date(2000 + int(year), int(month), int(day)).isoformat()
+        except ValueError:
+            boiler_date = None
+    weekday = number(at("TIM", 2))
+    boiler_weekday = (DAY_LABELS[SCHEDULES[int(weekday)]]
+                      if weekday is not None and weekday.is_integer() and 1 <= weekday <= 7 else None)
     constant_mode = {"On": "heat", "Off": "off"}.get(component("TMP", 0))
     constant_target = number(component("TMP", 1))
     if (constant_target is not None and
@@ -200,18 +211,16 @@ def state(record, config=None):
         "pressure": number(decoded.get("Davl")), "capacity": number(decoded.get("Pow")),
         "stage_1_capacity": number(at("ST1", 1)), "stage_2_capacity": number(at("ST2", 1)),
         "pump": decoded.get("NA"), "ten_1": decoded.get("TEN1"), "ten_2": decoded.get("TEN2"),
-        "heating": at("MOD", 1), "active_elements": number(at("MOD", 2)),
-        "total_elements": number(at("MOD", 3)), "pmt_state": at("PM", 0),
+        "heating": at("MOD", 1), "pmt_state": at("PM", 0),
         "frost": {"Off": "standby", "On": "checking"}.get(decoded.get("AF"), decoded.get("AF")),
         "error": decoded.get("Err"), "sensor_type": decoded.get("Sens"),
         "firmware": decoded.get("VER"), "serial": record["serial"],
-        "clock": clock,
-        "weekday": at("TIM", 2), "raw_status": record["status"],
+        "clock": clock, "boiler_date": boiler_date, "boiler_weekday": boiler_weekday,
+        "raw_status": record["status"],
         "ten_1_on": binary(decoded.get("TEN1")), "ten_2_on": binary(decoded.get("TEN2")),
         "last_report": timestamp(record["last_report"]),
         "last_status": timestamp(record["last_status"]), "command_state": record["command_state"],
         "command_error": record["command_error"] or "none",
-        "stage_conflict": {True: "conflict", False: "consistent", None: "not verified"}[report.get("stage_conflict")],
         "raw_fields": "available" if report else None,
         "parse_errors": "error" if report.get("parse_errors") else "ok",
         "statistics_days": number(at("STA", 0)), "period_amount": number(at("STA", 1)),
@@ -311,7 +320,7 @@ def discovery(entity, serial, firmware, config):
         schedule = entity.key.split("_")[1]
         payload.update(json_attributes_topic=f"{base}/schedules/{schedule}")
     if config.log_level.upper() == "DEBUG" and entity.key in {
-        "raw_fields", "parse_errors", "stage_conflict", "command_state", "raw_status"
+        "raw_fields", "parse_errors", "command_state", "raw_status"
     }:
         payload["json_attributes_topic"] = f"{base}/diagnostics"
     return payload

@@ -19,6 +19,8 @@ views:
           - sensor.tenko_boiler_pump
           - sensor.tenko_boiler_af_5
           - sensor.tenko_boiler_boiler_clock
+          - sensor.tenko_boiler_boiler_date
+          - sensor.tenko_boiler_boiler_weekday
           - sensor.tenko_boiler_error_code
       - type: thermostat
         entity: climate.tenko_boiler_constant_temperature
@@ -26,18 +28,18 @@ views:
         title: Settings
         entities:
           - select.tenko_boiler_control_mode
-          - switch.tenko_boiler_maintaining_minimum_temperature_enabled
-          - number.tenko_boiler_maintaining_minimum_temperature_min
-          - number.tenko_boiler_maintaining_minimum_temperature_max
+          - switch.tenko_boiler_maintaining_minimum_temperature_mmt
+          - number.tenko_boiler_mmt_min_temperature
+          - number.tenko_boiler_mmt_max_temperature
           - number.tenko_boiler_flow_cutoff
           - number.tenko_boiler_flow_restart_drop
           - number.tenko_boiler_return_cutoff
           - number.tenko_boiler_return_restart_drop
           - switch.tenko_boiler_power_modulation_mode
-          - switch.tenko_boiler_manual_stage_1_enable_modulation_off_only
-          - switch.tenko_boiler_manual_stage_2_enable_modulation_off_only
-          - number.tenko_boiler_pump_lead_in_delay
-          - number.tenko_boiler_pump_run_on_delay
+          - switch.tenko_boiler_stage_1_mod_only
+          - switch.tenko_boiler_stage_2_mod_only
+          - number.tenko_boiler_pump_pre_circulation_time
+          - number.tenko_boiler_pump_post_run_time
           - sensor.tenko_boiler_settings_upload_status
           - sensor.tenko_boiler_settings_command_error
       - type: entities

@@ -22,6 +22,8 @@ OBSOLETE_DISCOVERY = (
     ("binary_sensor", "heating_on"), ("switch", "constant_enabled"),
     ("number", "constant_target"), ("climate", "minimum_thermostat"),
     ("select", "stage_resolution_source"), ("button", "resolve_stages"),
+    ("sensor", "stage_conflict"), ("sensor", "weekday"),
+    ("sensor", "active_elements"), ("sensor", "total_elements"),
 )
 
 
@@ -287,7 +289,8 @@ class DockerFlowTests(unittest.TestCase):
             maximum = json.loads(self.latest["homeassistant/number/tenko_211229_005/pmt_max/config"])
             energy = json.loads(self.latest["homeassistant/sensor/tenko_211229_005/period_amount/config"])
             migration = self.energy_discovery.copy()
-            for key, name in (("clock", "Boiler clock"), ("frost", "AF-5"),
+            for key, name in (("clock", "Boiler clock"), ("boiler_date", "Boiler Date"),
+                              ("boiler_weekday", "Boiler Weekday"), ("frost", "AF-5"),
                               ("error", "Error Code"), ("pump", "Pump")):
                 sensor = json.loads(self.latest[f"homeassistant/sensor/tenko_211229_005/{key}/config"])
                 self.assertEqual(sensor["name"], name)
@@ -309,6 +312,12 @@ class DockerFlowTests(unittest.TestCase):
         self.assertEqual(energy["device"]["via_device"], "tenko_211229_005")
         self.assertEqual(energy["unique_id"], "tenko_211229_005_period_amount")
         self.assertEqual(self.topic_json("state")["period_amount"], parse_report(self.raw)["decoded"]["STA"][1])
+        values = self.topic_json("state")
+        self.assertEqual(values["boiler_date"], "2026-10-27")
+        self.assertEqual(values["boiler_weekday"], "WE")
+        for key in ("stage_conflict", "weekday", "active_elements", "total_elements"):
+            self.assertNotIn(key, values)
+            self.wait(lambda: self.latest.get(f"homeassistant/sensor/tenko_211229_005/{key}/config") == "")
         self.client.publish("homeassistant/status", "online", qos=1).wait_for_publish(3)
         self.wait(lambda: len(self.energy_discovery) == 4)
         with self.messages_lock:
@@ -381,10 +390,10 @@ class DockerFlowTests(unittest.TestCase):
         self.assertEqual((values["pmt_min"], values["pmt_max"], values["pmt_enabled"]), (8, 12, "Off"))
         self.assertNotIn("month_0", values)
         self.wait(lambda: self.latest.get("tenko/211229_005/diagnostics") == "")
-        for key in ("raw_fields", "stage_conflict", "statistics_days", "day_amount", "week_amount") + tuple(
+        for key in ("raw_fields", "statistics_days", "day_amount", "week_amount") + tuple(
                 f"month_{i}" for i in range(12)):
             self.wait(lambda: self.latest.get(f"homeassistant/sensor/tenko_211229_005/{key}/config") == "")
         with self.messages_lock:
-            for key in ("pump", "clock", "error", "frost", "period_amount"):
+            for key in ("pump", "clock", "boiler_date", "boiler_weekday", "error", "frost", "period_amount"):
                 payload = json.loads(self.latest[f"homeassistant/sensor/tenko_211229_005/{key}/config"])
                 self.assertNotIn("entity_category", payload)

@@ -916,10 +916,94 @@ class MQTTTests(unittest.TestCase):
         self.assertEqual(state(record)["clock"], "00:05")
         record, _ = self.store.report({**self.raw, "TIM": "[24,0,4,28,10,26]"})
         self.assertIsNone(state(record)["clock"])
+        self.assertEqual(state(record)["boiler_date"], "2026-10-28")
+        self.assertEqual(state(record)["boiler_weekday"], "TH")
         self.assertEqual(BY_KEY["modulation"].name, "Power Modulation Mode")
         for entity in ENTITIES:
             if entity.setting or entity.action or entity.kind == "climate":
                 self.assertEqual(entity.category, "config" if entity.key in POINT_CONTROLS else None)
+
+    def test_calendar_sensors_and_retired_diagnostics_discovery(self):
+        retired = ("stage_conflict", "weekday", "active_elements", "total_elements")
+        self.bridge.connected = True
+        for level in ("INFO", "DEBUG", "debug"):
+            with self.subTest(level=level):
+                self.bridge.config = Config(log_level=level)
+                self.messages.clear()
+                self.bridge.emit(self.serial, discover=True)
+                published = dict(self.messages)
+                values = published[f"tenko/{self.serial}/state"]
+                for key in retired:
+                    self.assertNotIn(key, BY_KEY)
+                    self.assertNotIn(key, values)
+                    self.assertNotIn(key, state(self.record))
+                    self.assertIn(("sensor", key), REMOVED_ENTITIES)
+                    self.assertEqual(published[f"homeassistant/sensor/tenko_{self.serial}/{key}/config"], "")
+                for key, name, value in (
+                    ("boiler_date", "Boiler Date", "2026-10-27"),
+                    ("boiler_weekday", "Boiler Weekday", "WE"),
+                ):
+                    payload = published[f"homeassistant/sensor/tenko_{self.serial}/{key}/config"]
+                    self.assertEqual(payload["name"], name)
+                    self.assertEqual(payload["unique_id"], f"tenko_{self.serial}_{key}")
+                    self.assertEqual(payload["device"]["identifiers"], [f"tenko_{self.serial}"])
+                    self.assertEqual(payload.get("device_class"),
+                                     "date" if key == "boiler_date" else None)
+                    self.assertEqual(payload["availability"][1]["topic"], f"tenko/{self.serial}/availability")
+                    self.assertIn(f"value_json.{key} is not none", payload["availability"][2]["value_template"])
+                    self.assertNotIn("entity_category", payload)
+                    self.assertNotIn("command_topic", payload)
+                    self.assertNotIn("state_class", payload)
+                    self.assertEqual(values[key], value)
+                self.assertEqual(values["modulated_power"], 0)
+                if level.upper() == "DEBUG":
+                    diagnostics = published[f"tenko/{self.serial}/diagnostics"]
+                    self.assertEqual(diagnostics["decoded"]["MOD"], ["On", "Off", 0, 3])
+                    self.assertEqual(diagnostics["decoded"]["TIM"], [19, 23, 3, 27, 10, 26])
+
+    def test_boiler_date_validates_calendar_without_affecting_weekday(self):
+        for day, month, year, expected in (
+            (27, 10, 26, "2026-10-27"), (1, 1, 0, "2000-01-01"),
+            (29, 2, 0, "2000-02-29"), (29, 2, 24, "2024-02-29"),
+            (31, 12, 99, "2099-12-31"), ("09", "02", "06", "2006-02-09"),
+            (29, 2, 26, None), (31, 4, 26, None), (0, 10, 26, None),
+            (32, 10, 26, None), (27, 0, 26, None), (27, 13, 26, None),
+            (27, 10, -1, None), (27, 10, 100, None), (27, 10, 2026, None),
+            (27.5, 10, 26, None), (27, 10.5, 26, None), (27, 10, 26.5, None),
+            ("NC", 10, 26, None), (27, "", 26, None), (27, 10, "nan", None),
+            ("inf", 10, 26, None), (27, "1e100", 26, None), (27, 10, "1e100", None),
+        ):
+            with self.subTest(day=day, month=month, year=year):
+                record, _ = self.store.report({**self.raw, "TIM": f"[19,23,3,{day},{month},{year}]"})
+                values = state(record)
+                self.assertEqual(values["boiler_date"], expected)
+                self.assertEqual(values["boiler_weekday"], "WE")
+                self.assertEqual(values["clock"], "19:23")
+
+    def test_boiler_weekday_uses_independent_setting_not_calendar_date(self):
+        cases = list(enumerate(("MO", "TU", "WE", "TH", "FR", "SA", "SU"), 1))
+        cases += [("2.0", "TU"), ("02", "TU")]
+        cases += [(value, None) for value in (0, 8, -1, 1.5, "NC", "", "nan", "inf", "1e100")]
+        for code, expected in cases:
+            with self.subTest(code=code):
+                record, _ = self.store.report({**self.raw, "TIM": f"[19,23,{code},27,10,26]"})
+                values = state(record)
+                self.assertEqual(values["boiler_weekday"], expected)
+                self.assertEqual(values["boiler_date"], "2026-10-27")
+                self.assertEqual(values["clock"], "19:23")
+                if expected is not None:
+                    self.assertEqual(len(values["boiler_weekday"]), 2)
+
+    def test_missing_or_malformed_tim_makes_calendar_sensors_unavailable(self):
+        for tim in (None, "", "[]", "[19,23,3]", "[19,23,3,27,10,26,0]"):
+            with self.subTest(tim=tim):
+                raw = {key: value for key, value in self.raw.items() if key != "TIM"}
+                if tim is not None:
+                    raw["TIM"] = tim
+                record, _ = self.store.report(raw)
+                values = state(record)
+                for key in ("clock", "boiler_date", "boiler_weekday"):
+                    self.assertIsNone(values[key])
 
     def test_energy_sensor_has_linked_device_and_direct_period_value(self):
         payload = discovery(BY_KEY["period_amount"], self.serial, None, self.config)
@@ -1003,7 +1087,7 @@ class MQTTTests(unittest.TestCase):
                 self.assertEqual(payload["device"]["via_device"], f"tenko_{self.serial}")
                 self.assertEqual(payload["unique_id"], f"tenko_{self.serial}_{key}")
         self.assertFalse(BY_KEY["capacity"].energy_device)
-        self.assertFalse(BY_KEY["active_elements"].energy_device)
+        self.assertFalse(BY_KEY["modulated_power"].energy_device)
 
     def test_energy_discovery_is_recreated_once_to_move_existing_entity(self):
         self.bridge.connected = True
@@ -1073,6 +1157,27 @@ class MQTTTests(unittest.TestCase):
                     if entity.setting:
                         self.assertEqual(payloads[0], "")
                         self.assertEqual(len(payloads), 2)
+
+    def test_renamed_controls_keep_existing_ids_and_settings(self):
+        self.bridge.connected = True
+        self.bridge.emit(self.serial, discover=True)
+        published = dict(self.messages)
+        for key, kind, name, setting, index in (
+            ("pmt_enabled", "switch", "Maintaining Minimum Temperature (MMT)", "PMT", 0),
+            ("pmt_min", "number", "MMT Min Temperature", "PMT", 1),
+            ("pmt_max", "number", "MMT Max Temperature", "PMT", 2),
+            ("manual_1", "switch", "Stage 1 (mod only)", "STU", 0),
+            ("manual_2", "switch", "Stage 2 (mod only)", "STU", 1),
+            ("pump_start", "number", "Pump Pre-Circulation Time", "pNA", 0),
+            ("pump_stop", "number", "Pump Post-Run Time", "pNA", 1),
+        ):
+            with self.subTest(key=key):
+                payload = published[f"homeassistant/{kind}/tenko_{self.serial}/{key}/config"]
+                self.assertEqual(payload["name"], name)
+                self.assertEqual(payload["unique_id"], f"tenko_{self.serial}_{key}")
+                self.assertEqual(payload["command_topic"], f"tenko/{self.serial}/command/{key}")
+                self.assertEqual(payload["value_template"], "{{ value_json." + key + " }}")
+                self.assertEqual((BY_KEY[key].setting, BY_KEY[key].index), (setting, index))
 
     def test_debug_discovery_and_retained_data_are_removed_when_debug_is_off(self):
         for level in ("DEBUG", "INFO"):

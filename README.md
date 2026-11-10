@@ -64,8 +64,9 @@ to the nearest valid 0.1 C within 7-30 C (for example 6.9 becomes 7.0).
 The correction is logged and queued together with enablement, not silently
 written into reported telemetry.
 
-**Maintaining Minimum Temperature** uses an enable switch and two number
-inputs: **min 6-15 C**, **max 7-17 C**, whole degrees, with **max > min**.
+**Maintaining Minimum Temperature (MMT)** is an enable switch with two number
+inputs: **MMT Min Temperature** (6-15 C) and **MMT Max Temperature** (7-17 C),
+whole degrees, with **max > min**.
 HA's MQTT range thermostat has a shared min/max for both endpoints and cannot
 expose those different endpoint bounds, so the former dual-setpoint thermostat
 is removed. All input commands validate the complete pair before queueing.
@@ -73,8 +74,11 @@ is removed. All input commands validate the complete pair before queueing.
 An enable change does not change USE: the separate control-mode selector
 still chooses constant versus scheduled operation.
 
-**Power Modulation Mode** and the two manual-stage permissions remain switches.
-Flow/return cutoff and restart-drop values and pump delays remain numbers.
+**Power Modulation Mode**, **Stage 1 (mod only)** and **Stage 2 (mod only)**
+remain switches. The stage permissions still apply only with automatic modulation off.
+Flow/return cutoff and restart-drop values, **Pump Pre-Circulation Time** and
+**Pump Post-Run Time** remain numbers. These label changes preserve existing
+entity identities and command topics.
 **Control mode** is the single selector for the boiler's `USE` setting:
 
 | Control mode | Wire value | Meaning |
@@ -114,13 +118,13 @@ Main parameter meanings and accepted *new* values:
 | `FI[1]` | Flow restart drop below cutoff | 1-9 C, whole degrees |
 | `RE[0]` | Return-temperature heating cutoff | 10-75 C, whole degrees |
 | `RE[1]` | Return restart drop below cutoff | 1-9 C, whole degrees |
-| `PMT[0]` | Maintaining Minimum Temperature enabled | On/Off |
-| `PMT[1]` | Lower/restart setpoint | 6-15 C, whole degrees |
-| `PMT[2]` | Upper/stop setpoint | 7-17 C, whole degrees; strictly above lower |
-| `pNA[0]` | Pump start to heating lead-in | 1-15 whole minutes |
-| `pNA[1]` | Heating stop to pump stop run-on | 1-15 whole minutes |
+| `PMT[0]` | Maintaining Minimum Temperature (MMT) | On/Off |
+| `PMT[1]` | MMT Min Temperature (lower/restart setpoint) | 6-15 C, whole degrees |
+| `PMT[2]` | MMT Max Temperature (upper/stop setpoint) | 7-17 C, whole degrees; strictly above lower |
+| `pNA[0]` | Pump Pre-Circulation Time (pump start to heating) | 1-15 whole minutes |
+| `pNA[1]` | Pump Post-Run Time (heating stop to pump stop) | 1-15 whole minutes |
 | `MOD` | Power Modulation Mode enable, not actual heating | On/Off |
-| `STU[0/1]` | Manual stage 1/2 permission, not actual heating | On/Off, applicable with modulation off |
+| `STU[0/1]` | Stage 1 (mod only) / Stage 2 (mod only): manual permissions, not actual heating | On/Off, applicable with modulation off |
 
 Reported values outside UI limits, such as the captured stored target 6.9 C,
 are retained in raw diagnostics without clamping; the thermostat target is
@@ -358,8 +362,15 @@ Their discovery entries, along with the **Schedule WW/MO-SU** sensors,
 are recreated once at bridge startup to clear old registry categories while
 keeping their unique IDs. Existing entity IDs may retain the old names.
 The clock is formatted as `HH:MM`, without inventing a timezone.
+**Boiler Date** and **Boiler Weekday** are also normal, read-only Sensors,
+available without DEBUG. Boiler Date uses `YYYY-MM-DD` from the day, month and
+two-digit year in `TIM`, with years interpreted as 2000-2099.
+Boiler Weekday uses the boiler's independently configured weekday (`TIM[2]`):
+`1=MO`, `2=TU`, `3=WE`, `4=TH`, `5=FR`, `6=SA`, `7=SU`.
+It is not calculated from the date, so the two may legitimately disagree.
+Missing or invalid components make only the affected sensor unavailable.
 AF Off means standby; On means checking, not enabled. Err is shown as its
-reported Error Code without inventing a numbered fault description. Raw weekday, sensor
+reported Error Code without inventing a numbered fault description. Clock/date/weekday, sensor
 type and diagnostics are read-only; unsupported writes are not invented.
 Nominal Pow and stage capacities are **rated kW**, never current consumption.
 Manual stage permissions do not prove heating is active.
@@ -442,8 +453,11 @@ their retained discovery configurations and raw diagnostics topic.
 
 On upgrade, retained discovery for replaced constant-temperature switches/numbers,
 the retired minimum-temperature thermostat,
-Modulation heating, duplicate raw readings and conflict-resolution controls
-is removed automatically. Names/categories and the Energy device association
+Modulation heating, Manual-stage duplicate consistency, Raw weekday code,
+Reported modulation element count, Reported total element count, other duplicate
+raw readings and conflict-resolution controls is removed automatically.
+The original fields remain in DEBUG raw diagnostics; MOD counts still drive
+Modulated Power. Names/categories and the Energy device association
 are republished; existing HA entity IDs or user-customized names may remain.
 
 To see only HTTP request/response pairs without MQTT traffic:
